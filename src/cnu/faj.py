@@ -2,21 +2,63 @@
 
 Equivale a ``cnu_faj.mata`` (``cnu_faj_fun_obj``, ``cnu_faj`` y ``cnu_faj_vec``)
 y a los comandos ``cnu_faji`` (escalar) y ``cnu_faj`` (vectorial) de Stata.
+
+**Derogado.** La Ley N 21.419 elimino el Factor de Ajuste del retiro
+programado a contar del 1 de febrero de 2022 (Capitulo V del Libro III del
+Compendio de Normas, derogado). Las funciones se conservan para reproducir
+calculos historicos: cuando la fecha de calculo (``fsiniestro`` o, en su
+defecto, el 31 de diciembre de ``agno_actual``, igual que la resolucion de
+tablas) es igual o posterior a :data:`DEROGACION_FAJ`, emiten una
+:class:`cnu.AdvertenciaCNU` y devuelven el valor de todos modos.
 """
 
 from __future__ import annotations
 
 import math
+import warnings
 
 import numpy as np
 
 from . import core
 from .core import AGNO_VECTOR, EDAD_MAXIMA, EDAD_MINIMA, TABLA_AFILIADO, TABLA_BENEFICIARIO
+from .tablas import fecha_fin_de_agno
+from .vectorial import AdvertenciaCNU
 
 EDAD_MAXIMA_FAJ = 98
 PCENT = 0.3
 CRITERIO = 1e-6
 MAXITER = 100
+
+# Ley N 21.419: el FAJ deja de existir para el retiro programado desde esta
+# fecha (YYYYMMDD). Ver el docstring del modulo.
+DEROGACION_FAJ = 20220201
+
+MENSAJE_FAJ_DEROGADO = (
+    "El Factor de Ajuste (FAJ) esta derogado: la Ley N 21.419 lo elimino del retiro programado "
+    "a contar del 1 de febrero de 2022. El resultado solo sirve para reproducir calculos historicos."
+)
+
+
+def fecha_calculo_faj(fsiniestro: int = 0, agno_actual: int | None = None) -> int:
+    """Fecha ``YYYYMMDD`` a la que se evalua la vigencia del FAJ.
+
+    Igual que la resolucion de tablas: ``fsiniestro`` si es distinto de 0 o, en
+    su defecto, el 31 de diciembre de ``agno_actual`` (por defecto, el agno en
+    curso).
+    """
+    if fsiniestro is not None and not core._es_missing(fsiniestro) and int(fsiniestro):
+        return int(fsiniestro)
+    return fecha_fin_de_agno(core._agno(agno_actual))
+
+
+def faj_derogado(fsiniestro: int = 0, agno_actual: int | None = None) -> bool:
+    """``True`` si a la fecha de calculo el FAJ ya no existe (ver :data:`DEROGACION_FAJ`)."""
+    return fecha_calculo_faj(fsiniestro, agno_actual) >= DEROGACION_FAJ
+
+
+def _advertir_faj_derogado(n_filas: int | None = None, stacklevel: int = 3) -> None:
+    detalle = "" if n_filas is None else f" ({n_filas} observaciones con fecha de calculo posterior a la derogacion)"
+    warnings.warn(MENSAJE_FAJ_DEROGADO + detalle, AdvertenciaCNU, stacklevel=stacklevel)
 
 
 def faj_funcion_objetivo(
@@ -117,6 +159,12 @@ def faj_afiliado(
     historicos del FAJ). En caso contrario se usa la misma tasa constante
     ``rp`` de la capitalizacion, igual que :func:`faj_afiliado_vec`.
 
+    **FAJ derogado desde el 1 de febrero de 2022 (Ley N 21.419).** Si la fecha
+    de calculo (``fsiniestro`` o el 31 de diciembre de ``agno_actual``) es
+    igual o posterior a :data:`DEROGACION_FAJ` se emite una
+    :class:`cnu.AdvertenciaCNU`; el valor se calcula igual y solo sirve para
+    reproducir calculos historicos.
+
     Las tablas ``tabla`` (afiliado, sexo ``cot_mujer``) y ``tabla_benef``
     (beneficiario, sexo ``cony_mujer``), por defecto ``"vigente"``, se
     resuelven una sola vez al inicio (``fsiniestro`` o el 31 de diciembre de
@@ -134,6 +182,8 @@ def faj_afiliado(
         x, y, cot_mujer, cony_mujer, tabla, tabla_benef, agno_vector, agno_actual,
         None, rp_cnu, fsiniestro, dir_tablas, dir_vectores,
     )
+    if faj_derogado(fsiniestro, agno_actual):
+        _advertir_faj_derogado()
     return calcular_faj(x, cnu, rp_a, edad_maxima, saldo, pcent, rp0, criter, maxiter)
 
 
@@ -171,6 +221,12 @@ def faj_afiliado_vec(
 
     Las tablas (por defecto ``"vigente"``) se resuelven por fila, con el rol,
     el sexo y la fecha de cada observacion, al inicio de su trayectoria.
+
+    **FAJ derogado desde el 1 de febrero de 2022 (Ley N 21.419).** Si alguna
+    fila tiene fecha de calculo (``fsiniestro`` o el 31 de diciembre de su
+    ``agno_actual``) igual o posterior a :data:`DEROGACION_FAJ` se emite una
+    sola :class:`cnu.AdvertenciaCNU` por llamada; los valores se calculan
+    igual y solo sirven para reproducir calculos historicos.
     """
     from .proyeccion import proyectar_cnu  # importacion diferida (ciclo)
     from .vectorial import _advertir, _motivo_sin_tasa, _opcional, _preparar
@@ -182,6 +238,7 @@ def faj_afiliado_vec(
                   edad_maxima=edad_maxima, saldo=saldo, pcent=pcent, rp0=rp0, incluir=incluir)
     faj = np.full(n, np.nan)
     errores: dict[str, list[int]] = {"sin_tasa": [], "vector": []}
+    derogadas = 0
     for i in range(n):
         if not a["incluir"][i] or math.isnan(x[i]):
             continue
@@ -197,6 +254,7 @@ def faj_afiliado_vec(
         rp_a = core.tasas_por_periodo(agno_vec, None, rp_i, dir_vectores, int(a["fsiniestro"][i]))
         yi = None if math.isnan(a["y"][i]) else core.edad_entera(a["y"][i])
         agno_act = None if math.isnan(a["agno_actual"][i]) else int(a["agno_actual"][i])
+        derogadas += faj_derogado(int(a["fsiniestro"][i]), agno_act)
         cnu = proyectar_cnu(
             xi, yi, bool(a["cot_mujer"][i]), bool(a["cony_mujer"][i]), a["tabla"][i], a["tabla_benef"][i],
             agno_vec, agno_act, None, rp_a, int(a["fsiniestro"][i]), dir_tablas, dir_vectores,
@@ -210,7 +268,12 @@ def faj_afiliado_vec(
                     " (o agno_vector o fsiniestro anterior a 2014)",
         "vector": "Para las siguientes observaciones se intentó utilizar un vector inexistente",
     })
+    if derogadas:
+        _advertir_faj_derogado(derogadas)
     return faj
 
 
-__all__ = ["faj_funcion_objetivo", "calcular_faj", "faj_afiliado", "faj_afiliado_vec"]
+__all__ = [
+    "DEROGACION_FAJ", "faj_funcion_objetivo", "calcular_faj", "faj_afiliado", "faj_afiliado_vec",
+    "faj_derogado", "fecha_calculo_faj",
+]

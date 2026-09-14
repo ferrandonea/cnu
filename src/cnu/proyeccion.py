@@ -12,7 +12,7 @@ import numpy as np
 
 from . import core
 from .core import AGNO_VECTOR, EDAD_MAXIMA, EDAD_MINIMA, TABLA_AFILIADO, TABLA_BENEFICIARIO
-from .faj import calcular_faj
+from .faj import _advertir_faj_derogado, calcular_faj, faj_derogado
 
 
 def _por_fila(valor, n: int) -> list:
@@ -176,7 +176,13 @@ def proyectar_pension(
         regla de :func:`cnu.core.tasas_por_periodo`: ``agno_vector`` explicito
         o el vector del agno de un ``fsiniestro`` anterior a 2014; en otro
         caso ``ValueError``. No hay tasa por defecto.
-    :param faj: si ``True``, la pension incluye Factor de Ajuste (ver :mod:`cnu.faj`).
+    :param faj: si ``True``, la pension incluye Factor de Ajuste (ver
+        :mod:`cnu.faj`). **El FAJ esta derogado desde el 1 de febrero de 2022
+        (Ley N 21.419):** con ``faj=True`` y fecha de calculo (``fsiniestro`` o
+        el 31 de diciembre de ``agno_actual``) igual o posterior a
+        :data:`cnu.faj.DEROGACION_FAJ` se emite una :class:`cnu.AdvertenciaCNU`
+        y la proyeccion se calcula igual, solo para reproducir calculos
+        historicos.
     :param edad_maxima, pcent, rp0, criter, maxiter: parametros del FAJ.
     """
     x = core.edad_entera(x)
@@ -211,6 +217,8 @@ def proyectar_pension(
             saldos[i] = max(0.0, (saldos[i - 1] - pens[i]) * (1 + tasas[i]))
         return ProyeccionPension(edades, saldos, pens, descripcion=descripcion)
 
+    if faj_derogado(fsiniestro, agno_actual):
+        _advertir_faj_derogado()
     f = calcular_faj(x, cnu, tasas, edad_maxima, saldo, pcent, rp0, criter, maxiter)
 
     pensfaj = pcent * saldo / cnu[0]

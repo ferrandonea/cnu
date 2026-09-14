@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import sys
+import warnings
 
 from . import __version__, core, faj as _faj, proyeccion, tablas
 
@@ -70,7 +71,7 @@ def construir_parser() -> argparse.ArgumentParser:
     _opciones_comunes(p, benef=True, afil=False)
     _opciones_tasa(p)
 
-    p = sub.add_parser("faj", help="Factor de Ajuste (cnu_faji)")
+    p = sub.add_parser("faj", help="Factor de Ajuste (cnu_faji); derogado desde el 1-2-2022 (Ley 21.419)")
     p.add_argument("x", type=int, help="edad del afiliado")
     p.add_argument("y", type=int, nargs="?", default=None, help="edad del cónyuge (opcional)")
     p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
@@ -85,7 +86,8 @@ def construir_parser() -> argparse.ArgumentParser:
     p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
     p.add_argument("--cony-hombre", action="store_true", help="el cónyuge es hombre (por defecto, mujer)")
     p.add_argument("--rp", type=float, default=None, help="tasa única de retiro programado (TITRP)")
-    p.add_argument("--faj", action="store_true", help="incluye Factor de Ajuste")
+    p.add_argument("--faj", action="store_true",
+                   help="incluye Factor de Ajuste (derogado desde el 1-2-2022, Ley 21.419)")
     p.add_argument("--csv", action="store_true", help="imprime el resultado como CSV")
     _opciones_comunes(p, benef=True)
     _opciones_faj(p)
@@ -112,15 +114,23 @@ CODIGO_ERROR_TASA = 2
 
 def main(argv: list[str] | None = None) -> int:
     """Ejecuta la CLI. Sin tasa determinable (o con vector inexistente) escribe
-    el mensaje de la API en stderr y devuelve :data:`CODIGO_ERROR_TASA`."""
+    el mensaje de la API en stderr y devuelve :data:`CODIGO_ERROR_TASA`. Las
+    advertencias de la API (p.ej. FAJ derogado) se escriben en stderr y no
+    cambian el codigo de salida."""
     args = construir_parser().parse_args(argv)
     try:
-        return _ejecutar(args)
+        with warnings.catch_warnings(record=True) as avisos:
+            warnings.simplefilter("always")
+            codigo = _ejecutar(args)
     except (ValueError, FileNotFoundError) as e:
         print(f"cnu {args.comando}: error: {e}", file=sys.stderr)
         print("Entregue la tasa con --rp (TITRP), --rv o --agno-vector, o un --fsiniestro anterior a 2014.",
               file=sys.stderr)
         return CODIGO_ERROR_TASA
+    # Las advertencias (p.ej. FAJ derogado) van a stderr sin cambiar el codigo de salida.
+    for aviso in avisos:
+        print(f"cnu {args.comando}: advertencia: {aviso.message}", file=sys.stderr)
+    return codigo
 
 
 def _ejecutar(args) -> int:
