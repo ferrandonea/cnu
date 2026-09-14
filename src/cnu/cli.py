@@ -34,6 +34,16 @@ def _opciones_tasa(p: argparse.ArgumentParser) -> None:
     p.add_argument("--pasos", action="store_true", help="imprime el cálculo periodo a periodo")
 
 
+def _opcion_conviviente(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--conviviente", action="store_true",
+                   help="el beneficiario es conviviente civil (misma fórmula y valor que el cónyuge)")
+
+
+def _opcion_hijo_invalido(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--hijo-invalido", action="store_true",
+                   help="algún hijo con derecho a pensión es inválido: 50%% vitalicio (la edad h no interviene)")
+
+
 def _opciones_faj(p: argparse.ArgumentParser) -> None:
     p.add_argument("--edad-maxima", type=int, default=_faj.EDAD_MAXIMA_FAJ, help="edad hasta la que cubre el FAJ")
     p.add_argument("--saldo", type=float, default=1.0, help="saldo al momento del retiro")
@@ -57,17 +67,42 @@ def construir_parser() -> argparse.ArgumentParser:
     _opciones_comunes(p, benef=False)
     _opciones_tasa(p)
 
-    p = sub.add_parser("conyuge", help="CNU para cónyuge sin hijos (cnu_cnyg_s_hi)")
+    p = sub.add_parser("conyuge", help="CNU para cónyuge o conviviente civil sin hijos, 60%% (cnu_cnyg_s_hi)")
     p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
     p.add_argument("y", type=float, help="edad del cónyuge (admite decimales; se redondea a edad actuarial)")
     p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
     p.add_argument("--cony-hombre", action="store_true", help="el cónyuge es hombre (por defecto, mujer)")
+    _opcion_conviviente(p)
     _opciones_comunes(p, benef=True)
     _opciones_tasa(p)
 
-    p = sub.add_parser("sobrev", help="CNU de sobrevivencia para cónyuge sin hijos (cnu_sobr_cnyg_s_hi)")
+    p = sub.add_parser("sobrev", help="CNU de sobrevivencia para cónyuge o conviviente civil sin hijos, 60%%"
+                                      " (cnu_sobr_cnyg_s_hi)")
     p.add_argument("y", type=float, help="edad del cónyuge (admite decimales; se redondea a edad actuarial)")
     p.add_argument("--mujer", action="store_true", help="el cónyuge es mujer")
+    _opcion_conviviente(p)
+    _opciones_comunes(p, benef=True, afil=False)
+    _opciones_tasa(p)
+
+    p = sub.add_parser("conyuge-ch", help="CNU para cónyuge o conviviente civil con hijos con derecho a pensión,"
+                                          " 50%% hasta los 24 años del hijo menor y 60%% después")
+    p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("y", type=float, help="edad del cónyuge (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("h", type=float, help="edad del hijo menor con derecho a pensión, desde 0 (se redondea a edad actuarial)")
+    p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
+    p.add_argument("--cony-hombre", action="store_true", help="el cónyuge es hombre (por defecto, mujer)")
+    _opcion_hijo_invalido(p)
+    _opcion_conviviente(p)
+    _opciones_comunes(p, benef=True)
+    _opciones_tasa(p)
+
+    p = sub.add_parser("sobrev-conyuge-ch", help="CNU de sobrevivencia para cónyuge o conviviente civil con hijos"
+                                                 " con derecho a pensión, 50%%/60%%")
+    p.add_argument("y", type=float, help="edad del cónyuge (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("h", type=float, help="edad del hijo menor con derecho a pensión, desde 0 (se redondea a edad actuarial)")
+    p.add_argument("--mujer", action="store_true", help="el cónyuge es mujer")
+    _opcion_hijo_invalido(p)
+    _opcion_conviviente(p)
     _opciones_comunes(p, benef=True, afil=False)
     _opciones_tasa(p)
 
@@ -159,6 +194,14 @@ def etiqueta_hijo_invalido(parcial: bool) -> str:
     return "hijo inválido parcial 15%/11%" if parcial else "hijo inválido total 15%"
 
 
+def etiqueta_conyuge(conviviente: bool, con_hijos: bool = False, hijo_invalido: bool = False) -> str:
+    """Tipo de beneficiario (cónyuge o conviviente civil) y porcentaje aplicado para ``describir``."""
+    quien = "conviviente civil" if conviviente else "cónyuge"
+    if not con_hijos:
+        return f"{quien} sin hijos"
+    return f"{quien} con hijo inválido 50%" if hijo_invalido else f"{quien} con hijos 50%/60%"
+
+
 def main(argv: list[str] | None = None) -> int:
     """Ejecuta la CLI. Sin tasa determinable (o con vector inexistente) escribe
     el mensaje de la API en stderr y devuelve :data:`CODIGO_ERROR_TASA`. Las
@@ -206,20 +249,39 @@ def _ejecutar(args) -> int:
         v = core.cnu_afiliado(args.x, args.mujer, args.tabla, rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
         print(f"{v:9.6f}")
     elif c == "conyuge":
-        print(core.describir("conyuge sin hijos", args.tabla, args.tabla_benef, args.agno_vector,
+        print(core.describir(etiqueta_conyuge(args.conviviente), args.tabla, args.tabla_benef, args.agno_vector,
                              args.agno_actual, args.rv, args.rp, args.fsiniestro,
                              mujer=args.cot_mujer, benef_mujer=not args.cony_hombre, dir_tablas=args.dir_tablas)
               + _nota_edades(afiliado=args.x, conyuge=args.y))
         v = core.cnu_conyuge(args.x, args.y, args.cot_mujer, not args.cony_hombre, args.tabla, args.tabla_benef,
-                             rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
+                             rv=args.rv, rp=args.rp, pasos=args.pasos, conviviente=args.conviviente, **comunes)
         print(f"{v:9.6f}")
     elif c == "sobrev":
-        print(core.describir("sobrevivencia de conyuge sin hijos", None, args.tabla_benef, args.agno_vector,
-                             args.agno_actual, args.rv, args.rp, args.fsiniestro,
+        print(core.describir("sobrevivencia de " + etiqueta_conyuge(args.conviviente), None, args.tabla_benef,
+                             args.agno_vector, args.agno_actual, args.rv, args.rp, args.fsiniestro,
                              benef_mujer=args.mujer, dir_tablas=args.dir_tablas)
               + _nota_edades(conyuge=args.y))
         v = core.cnu_sobrevivencia_conyuge(args.y, args.mujer, args.tabla_benef, rv=args.rv, rp=args.rp,
-                                           pasos=args.pasos, **comunes)
+                                           pasos=args.pasos, conviviente=args.conviviente, **comunes)
+        print(f"{v:9.6f}")
+    elif c == "conyuge-ch":
+        print(core.describir(etiqueta_conyuge(args.conviviente, True, args.hijo_invalido), args.tabla,
+                             args.tabla_benef, args.agno_vector, args.agno_actual, args.rv, args.rp,
+                             args.fsiniestro, mujer=args.cot_mujer, benef_mujer=not args.cony_hombre,
+                             dir_tablas=args.dir_tablas)
+              + _nota_edades(afiliado=args.x, conyuge=args.y, hijo=args.h))
+        v = core.cnu_conyuge_con_hijos(args.x, args.y, args.h, args.cot_mujer, not args.cony_hombre,
+                                       args.hijo_invalido, args.tabla, args.tabla_benef, rv=args.rv, rp=args.rp,
+                                       pasos=args.pasos, conviviente=args.conviviente, **comunes)
+        print(f"{v:9.6f}")
+    elif c == "sobrev-conyuge-ch":
+        print(core.describir("sobrevivencia de " + etiqueta_conyuge(args.conviviente, True, args.hijo_invalido),
+                             None, args.tabla_benef, args.agno_vector, args.agno_actual, args.rv, args.rp,
+                             args.fsiniestro, benef_mujer=args.mujer, dir_tablas=args.dir_tablas)
+              + _nota_edades(conyuge=args.y, hijo=args.h))
+        v = core.cnu_sobrevivencia_conyuge_con_hijos(args.y, args.h, args.mujer, args.hijo_invalido,
+                                                     args.tabla_benef, rv=args.rv, rp=args.rp, pasos=args.pasos,
+                                                     conviviente=args.conviviente, **comunes)
         print(f"{v:9.6f}")
     elif c == "hijo":
         print(core.describir("hijo no inválido 15%", args.tabla, args.tabla_benef, args.agno_vector,

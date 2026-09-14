@@ -151,3 +151,34 @@ def test_hijo_invalido_vec_filas_invalidas():
     with pytest.warns(cnu.AdvertenciaCNU, match="edad negativa"):
         v = cnu.cnu_sobrevivencia_hijo_invalido_vec([-1, 0, np.nan], parcial=[True, False, True], rp=0.03, agno_actual=2026)
     assert np.isnan(v[0]) and v[1] > 0 and np.isnan(v[2])
+
+
+def test_conyuge_con_hijos_vec_coincide_con_escalar():
+    x, y, h = [65, 60, 65, 65], [63, 62, 63, 63], [10, 21, 30, 5]
+    cot, cony, inv = [False, True, False, False], [True, False, True, True], [False, False, False, True]
+    v = cnu.cnu_conyuge_con_hijos_vec(x, y, h, cot_mujer=cot, cony_mujer=cony, hijo_invalido=inv, rp=0.03, agno_actual=2026)
+    e = [cnu.cnu_conyuge_con_hijos(a, b, c, d, f, g, rp=0.03, agno_actual=2026)
+         for a, b, c, d, f, g in zip(x, y, h, cot, cony, inv)]
+    np.testing.assert_allclose(v, e)
+    assert v[2] == cnu.cnu_conyuge(65, 63, rp=0.03, agno_actual=2026)  # hijo de 30: como sin hijos
+    v = cnu.cnu_sobrevivencia_conyuge_con_hijos_vec(y, h, mujer=cony, hijo_invalido=inv, rp=[0.03, np.nan, 0.03, 0.03],
+                                                    fsiniestro=[0, 20130101, 0, 0], agno_actual=2026)
+    e = [cnu.cnu_sobrevivencia_conyuge_con_hijos(63, 10, mujer=True, rp=0.03, agno_actual=2026),
+         cnu.cnu_sobrevivencia_conyuge_con_hijos(62, 21, fsiniestro=20130101, agno_actual=2026),
+         cnu.cnu_sobrevivencia_conyuge(63, mujer=True, rp=0.03, agno_actual=2026),
+         cnu.cnu_sobrevivencia_conyuge_con_hijos(63, 5, mujer=True, hijo_invalido=True, rp=0.03, agno_actual=2026)]
+    np.testing.assert_allclose(v, e)
+
+
+def test_conyuge_con_hijos_vec_filas_invalidas():
+    with pytest.warns(cnu.AdvertenciaCNU, match="hijos tienen edad negativa") as w:
+        v = cnu.cnu_conyuge_con_hijos_vec([65, 19, 65, 65, 65, 65], [63, 63, 19, 111, 63, 63], [-1, 10, 10, 10, 10, 10],
+                                          rp=[0.03, 0.03, 0.03, 0.03, np.nan, 0.03], agno_actual=2026,
+                                          incluir=[True, True, True, True, True, False])
+    msg = str(w[0].message)
+    assert "cotizantes tienen menos de 20" in msg and "cónyuges tienen menos de 20" in msg
+    assert "cónyuges tienen más de 110" in msg and "sin tasa" in msg
+    assert np.isnan(v).all()
+    with pytest.warns(cnu.AdvertenciaCNU, match="edad negativa"):
+        v = cnu.cnu_sobrevivencia_conyuge_con_hijos_vec([63, 63, 63, 19], [-1, 0, np.nan, 10], rp=0.03, agno_actual=2026)
+    assert np.isnan(v[0]) and v[1] > 0 and np.isnan(v[2]) and np.isnan(v[3])

@@ -357,3 +357,154 @@ def test_hijo_invalido_sin_edad_limite_y_tramos():
     for nombre in ("cnu_hijo_invalido", "cnu_sobrevivencia_hijo_invalido", "cnu_hijo_invalido_vec",
                    "cnu_sobrevivencia_hijo_invalido_vec"):
         assert nombre in cnu.__all__
+
+
+def _formula_conyuge_con_hijos_anexo7(y, h, x=None, i=0.03, agno=2026, cony_mujer=True, cot_mujer=False,
+                                      hijo_invalido=False):
+    """Transcripcion directa de las letras 1.b y 1.c (sin ``x``) y 2.c y 2.d
+    (con ``x``) del Anexo N 7 para el conyuge con hijos, con tasa constante
+    ``i`` y las tablas vigentes en ``agno``.
+
+    Procedimiento (z = 24, N = z - h = y' - y, w hasta los 110 agnos):
+
+    1. ``q_y+t`` mejorados a ``agno`` de la tabla de beneficiario del sexo del
+       conyuge (``q = 1`` mas alla de la tabla) y, para 2.c y 2.d, ``q_x+t`` de
+       la del afiliado.
+    2. ``l_0 = 1``, ``l_t = l_{t-1} (1 - q_{y+t-1})`` (idem ``l^x_t``).
+    3. ``v_t = 1 / (1 + i)^t``; en 2.c y 2.d cada termino lleva ``(1 - l^x_t)``.
+    4. 1.b: ``0,5 [ sum_{t=0}^{w} l_t v_t - 11/24 ]
+             + 0,1 [ sum_{t=0}^{w} l_{N+t} v_{N+t} - 11/24 l_N v_N ]``;
+       1.c: ``0,5 [ sum_{t=0}^{w} l_t v_t - 11/24 ]``;
+       2.c: ``0,5 sum_{t=0}^{w} l_t (1 - l^x_t) v_t
+             + 0,1 sum_{t=0}^{w} l_{N+t} (1 - l^x_{N+t}) v_{N+t}
+             - 0,1 * 11/24 l_N v_N (1 - l^x_N)``;
+       2.d: ``0,5 sum_{t=0}^{w} l_t (1 - l^x_t) v_t``.
+    """
+    w = 110 - y + (0 if x is None else 1)
+    q = np.concatenate([cnu.tabla_mortalidad("vigente", cnu.ROL_BENEFICIARIO, cony_mujer, agno_actual=agno)
+                        .qx_mejorado(agno, y), np.ones(300)])
+    ly = [1.0]
+    for t in range(w + 40):
+        ly.append(ly[-1] * (1 - q[y + t]))
+    v = [(1 + i) ** -t for t in range(w + 41)]
+    n = 24 - h
+    if x is None:
+        vitalicia = sum(ly[t] * v[t] for t in range(w + 1)) - 11 / 24
+        if hijo_invalido:
+            return round(0.5 * vitalicia, 6)
+        diferida = sum(ly[n + t] * v[n + t] for t in range(w + 1 - n)) - 11 / 24 * ly[n] * v[n]
+        return round(0.5 * vitalicia + 0.1 * diferida, 6)
+    qx = np.concatenate([cnu.tabla_mortalidad("vigente", cnu.ROL_AFILIADO, cot_mujer, agno_actual=agno)
+                         .qx_mejorado(agno, x), np.ones(300)])
+    lx = [1.0]
+    for t in range(w + 40):
+        lx.append(lx[-1] * (1 - qx[x + t]))
+    termino = [ly[t] * (1 - lx[t]) * v[t] for t in range(w + 41)]
+    vitalicia = sum(termino[: w + 1])
+    if hijo_invalido:
+        return round(0.5 * vitalicia, 6)
+    diferida = sum(termino[n: w + 1])
+    return round(0.5 * vitalicia + 0.1 * diferida - 0.1 * 11 / 24 * ly[n] * v[n] * (1 - lx[n]), 6)
+
+
+def test_conyuge_con_hijos_valores_de_referencia_anexo7():
+    """Conyuge de 63 agnos (mujer, b2020m) con hijo menor de 21 y afiliado de
+    65 (cb2020h), tasa 3% en 2026: y' = 66, N = 3 periodos hasta los 24 del
+    hijo.
+
+    Con q_63..q_65 = 0.00475078, 0.00525371, 0.00580256 (b2020m mejorada a
+    2026) resulta l_1..l_3 = 0.99524922, 0.99002047, 0.98427582,
+    v_3 = 0.91514166 y l_3 v_3 = 0.90075181; sumando hasta los 110:
+
+        1.b: 0,5 [ 18.248965 - 11/24 ] + 0,1 [ 15.349515 - 11/24 * 0.90075181 ]
+             = 0,5 * 17.790632 + 0,1 * 14.936670 = 10.388983
+        1.c: 0,5 * 17.790632 = 8.895316
+
+    Con l^x_1..l^x_3 = 0.99205009, 0.98334615, 0.97367639 (cb2020h a 2026):
+
+        2.c: 0,5 * 4.155463 + 0,1 * 4.132240
+             - 0,1 * 11/24 * 0.90075181 * (1 - 0.97367639) = 2.489869
+        2.d: 0,5 * 4.155463 = 2.077732
+
+    Equivalen a los dos tramos 0,5 * temporal + 0,6 * (vitalicia - temporal),
+    con temporal = 2.853962 en 1.b: 0,5 * 2.853962 + 0,6 * 14.936670 = 10.388983.
+    """
+    assert _formula_conyuge_con_hijos_anexo7(63, 21) == 10.388983
+    assert cnu.cnu_sobrevivencia_conyuge_con_hijos(63, 21, mujer=True, rp=0.03, agno_actual=2026) == 10.388983
+    assert _formula_conyuge_con_hijos_anexo7(63, 21, hijo_invalido=True) == 8.895316
+    assert cnu.cnu_sobrevivencia_conyuge_con_hijos(63, 21, mujer=True, hijo_invalido=True, rp=0.03,
+                                                   agno_actual=2026) == 8.895316
+    assert _formula_conyuge_con_hijos_anexo7(63, 21, x=65) == 2.489869
+    assert cnu.cnu_conyuge_con_hijos(65, 63, 21, rp=0.03, agno_actual=2026) == 2.489869
+    assert _formula_conyuge_con_hijos_anexo7(63, 21, x=65, hijo_invalido=True) == 2.077732
+    assert cnu.cnu_conyuge_con_hijos(65, 63, 21, hijo_invalido=True, rp=0.03, agno_actual=2026) == 2.077732
+    # Otras edades, contra la misma transcripcion de la formula (incluido el
+    # conyuge de 90 con un hijo de 0, cuyo tramo al 60% queda fuera de la tabla).
+    for y, h in ((63, 0), (63, 10), (63, 23), (40, 3), (30, 17), (90, 0)):
+        for hijo_invalido in (False, True):
+            assert cnu.cnu_sobrevivencia_conyuge_con_hijos(y, h, mujer=True, hijo_invalido=hijo_invalido, rp=0.03,
+                                                           agno_actual=2026) == (
+                _formula_conyuge_con_hijos_anexo7(y, h, hijo_invalido=hijo_invalido)
+            )
+            assert cnu.cnu_conyuge_con_hijos(65, y, h, hijo_invalido=hijo_invalido, rp=0.03, agno_actual=2026) == (
+                _formula_conyuge_con_hijos_anexo7(y, h, x=65, hijo_invalido=hijo_invalido)
+            )
+    assert cnu.cnu_conyuge_con_hijos(60, 62, 10, cot_mujer=True, cony_mujer=False, rp=0.03, agno_actual=2026) == (
+        _formula_conyuge_con_hijos_anexo7(62, 10, x=60, cony_mujer=False, cot_mujer=True)
+    )
+
+
+def test_conyuge_con_hijos_tramos_y_conviviente():
+    """Con el hijo menor de 24 o mas el resultado es exactamente el del conyuge
+    sin hijos; con menos, es menor y crece con la edad del hijo; con hijo
+    invalido es 50% vitalicio; el conviviente civil vale lo mismo que el conyuge."""
+    sin_hijos = cnu.cnu_conyuge(65, 63, rp=0.03, agno_actual=2026)
+    sob_sin_hijos = cnu.cnu_sobrevivencia_conyuge(63, mujer=True, rp=0.03, agno_actual=2026)
+    for h in (24, 23.5, 30, 110):
+        assert cnu.cnu_conyuge_con_hijos(65, 63, h, rp=0.03, agno_actual=2026) == sin_hijos
+        assert cnu.cnu_sobrevivencia_conyuge_con_hijos(63, h, mujer=True, rp=0.03, agno_actual=2026) == sob_sin_hijos
+    vej = [cnu.cnu_conyuge_con_hijos(65, 63, h, rp=0.03, agno_actual=2026) for h in range(0, 25)]
+    sob = [cnu.cnu_sobrevivencia_conyuge_con_hijos(63, h, mujer=True, rp=0.03, agno_actual=2026) for h in range(0, 25)]
+    assert all(v < sin_hijos for v in vej[:-1]) and all(s < sob_sin_hijos for s in sob[:-1])
+    assert all(a < b for a, b in zip(vej, vej[1:])) and all(a < b for a, b in zip(sob, sob[1:]))
+    assert all(v < s for v, s in zip(vej, sob))
+    # Con algun hijo invalido: 50% vitalicio (5/6 del 60% sin hijos), sin que h intervenga.
+    for h in (0, 10, 30):
+        assert cnu.cnu_conyuge_con_hijos(65, 63, h, hijo_invalido=True, rp=0.03, agno_actual=2026) == pytest.approx(
+            sin_hijos * 5 / 6, abs=1e-6
+        )
+        assert cnu.cnu_sobrevivencia_conyuge_con_hijos(63, h, mujer=True, hijo_invalido=True, rp=0.03,
+                                                       agno_actual=2026) == pytest.approx(sob_sin_hijos * 5 / 6, abs=1e-6)
+    assert all(cnu.cnu_conyuge_con_hijos(65, 63, h, hijo_invalido=True, rp=0.03, agno_actual=2026) <= v
+               for h, v in enumerate(vej))
+    # Conviviente civil: misma formula, mismo valor (escalar y vectorial).
+    assert cnu.cnu_conyuge(65, 63, conviviente=True, rp=0.03, agno_actual=2026) == sin_hijos
+    assert cnu.cnu_sobrevivencia_conyuge(63, mujer=True, conviviente=True, rp=0.03, agno_actual=2026) == sob_sin_hijos
+    assert cnu.cnu_conyuge_con_hijos(65, 63, 10, conviviente=True, rp=0.03, agno_actual=2026) == vej[10]
+    assert cnu.cnu_sobrevivencia_conyuge_con_hijos(63, 10, mujer=True, conviviente=True, rp=0.03,
+                                                   agno_actual=2026) == sob[10]
+    np.testing.assert_array_equal(
+        cnu.cnu_conyuge_vec([65, 65], [63, 63], cony_mujer=True, conviviente=[True, False], rp=0.03, agno_actual=2026),
+        [sin_hijos, sin_hijos],
+    )
+    np.testing.assert_array_equal(
+        cnu.cnu_sobrevivencia_conyuge_con_hijos_vec([63, 63], [10, 10], mujer=True, conviviente=[True, False],
+                                                    rp=0.03, agno_actual=2026),
+        [sob[10], sob[10]],
+    )
+    # Misma regla de tasa, tabla por fecha y edad actuarial que las funciones existentes.
+    with pytest.raises(ValueError, match="TITRP"):
+        cnu.cnu_conyuge_con_hijos(65, 63, 10, agno_actual=2026)
+    with pytest.raises(ValueError, match="TITRP"):
+        cnu.cnu_sobrevivencia_conyuge_con_hijos(63, 10, agno_actual=2026)
+    assert cnu.cnu_conyuge_con_hijos(65, 63, 10, fsiniestro=20130101, rp=0.03, agno_actual=2026) == (
+        cnu.cnu_conyuge_con_hijos(65, 63, 10, tabla="rv2009", tabla_benef="b2006", rp=0.03, agno_actual=2026)
+    )
+    assert cnu.cnu_sobrevivencia_conyuge_con_hijos(62.5, 9.5, mujer=True, rp=0.03, agno_actual=2026) == (
+        cnu.cnu_sobrevivencia_conyuge_con_hijos(63, 10, mujer=True, rp=0.03, agno_actual=2026)
+    )
+    d = cnu.describir("conviviente civil con hijos 50%/60%", "vigente", "vigente", rp=0.03, agno_actual=2026)
+    assert d == "CNU RP para conviviente civil con hijos 50%/60% (tablas cb2020h b2020m), tasa 3% en el año 2026"
+    for nombre in ("cnu_conyuge_con_hijos", "cnu_sobrevivencia_conyuge_con_hijos", "cnu_conyuge_con_hijos_vec",
+                   "cnu_sobrevivencia_conyuge_con_hijos_vec"):
+        assert nombre in cnu.__all__

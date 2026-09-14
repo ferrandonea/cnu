@@ -59,6 +59,15 @@ cnu.cnu_hijo_invalido(65, 30, rp=0.03, agno_actual=2026)                  # 1.25
 cnu.cnu_hijo_invalido(65, 21, hijo_mujer=True, parcial=True, rp=0.03, agno_actual=2026)  # 1.259397  (cb2020h, mi2020m)
 cnu.cnu_sobrevivencia_hijo_invalido(21, mujer=True, rp=0.03, agno_actual=2026)           # 3.939510  (mi2020m)
 
+# Cónyuge con hijos con derecho a pensión: 50% hasta los 24 años del hijo menor (aquí de 10) y 60% después;
+# con algún hijo inválido, 50% vitalicio. Con el hijo menor de 24 o más coincide con el cónyuge sin hijos
+cnu.cnu_conyuge_con_hijos(65, 63, 10, rp=0.03, agno_actual=2026)                      # 2.409035  (cb2020h, b2020m)
+cnu.cnu_conyuge_con_hijos(65, 63, 10, hijo_invalido=True, rp=0.03, agno_actual=2026)  # 2.077732
+cnu.cnu_sobrevivencia_conyuge_con_hijos(63, 10, mujer=True, rp=0.03, agno_actual=2026)  # 9.578224  (b2020m)
+
+# Conviviente civil: las funciones del cónyuge con conviviente=True (misma fórmula, mismo valor)
+cnu.cnu_conyuge(65, 63, conviviente=True, rp=0.03, agno_actual=2026)   # 2.493278
+
 # Factor de ajuste (derogado desde el 1-2-2022: con fecha posterior emite AdvertenciaCNU)
 cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2026)      # 0.037205
 cnu.faj_afiliado(65, 62, rp=0.03, agno_vector=2013, agno_actual=2026)  # 0.004659
@@ -121,8 +130,9 @@ Una tabla explícita se respeta aunque no sea la vigente:
 
 Las funciones con sufijo `_vec` equivalen a los comandos de Stata que operan
 sobre variables (`cnu_afil`, `cnu_cnyg_s_h`, `cnu_sobr_cnyg_s_h`, `cnu_faj`);
-`cnu_hijo_vec`, `cnu_sobrevivencia_hijo_vec`, `cnu_hijo_invalido_vec` y
-`cnu_sobrevivencia_hijo_invalido_vec` no tienen comando equivalente.
+`cnu_hijo_vec`, `cnu_sobrevivencia_hijo_vec`, `cnu_hijo_invalido_vec`,
+`cnu_sobrevivencia_hijo_invalido_vec`, `cnu_conyuge_con_hijos_vec` y
+`cnu_sobrevivencia_conyuge_con_hijos_vec` no tienen comando equivalente.
 Cada argumento puede ser un escalar o un arreglo con un valor por fila. La
 tabla `"vigente"` se resuelve fila a fila con el sexo, el `agno_actual` y el
 `fsiniestro` de cada observación.
@@ -135,6 +145,7 @@ cnu.cnu_afiliado_vec(edades, fsiniestro=[20130101, 20200101, 20240101], rp=0.03)
 cnu.cnu_conyuge_vec(edades, [53, 63, 73], cony_mujer=True, rp=[0.03, np.nan, 0.03])  # fila 1 sin tasa -> nan
 cnu.cnu_hijo_vec(edades, [3, 12, 25], hijo_mujer=[0, 1, 0], rp=0.03)                # fila 2: 0 (24 años o más)
 cnu.cnu_hijo_invalido_vec(edades, [3, 12, 25], parcial=[0, 1, 1], rp=0.03)          # tabla mi, sin edad límite
+cnu.cnu_conyuge_con_hijos_vec(edades, [53, 63, 73], [3, 12, 25], cony_mujer=True, rp=0.03)  # fila 2: como sin hijos
 cnu.faj_afiliado_vec(edades, rp=0.03)
 ```
 
@@ -153,6 +164,9 @@ vector de tasas inexistente quedan en `nan` y se emite una advertencia
 | `tabla_benef` | Tabla del beneficiario: `"vigente"` (por defecto) o un nombre explícito como `"b2006"`, `"b2020"` (`"mi2020"` para el hijo inválido, cuyo rol es el de inválido). |
 | `mujer`, `cot_mujer`, `cony_mujer`, `hijo_mujer` | Sexo del afiliado, cónyuge o hijo; determina la tabla (`cb` para hombres desde 2016). |
 | `parcial` | Grado de invalidez del hijo inválido: `False` (por defecto) total, 15% vitalicio; `True` parcial, 15% hasta los 24 años y 11% después. |
+| `h` (cónyuge con hijos) | Edad del hijo menor con derecho a pensión: fija el tramo al 50% (hasta que cumpla 24 años) y el tramo al 60% desde entonces. |
+| `hijo_invalido` | `True` si algún hijo con derecho a pensión del cónyuge es inválido: 50% vitalicio (la edad `h` no interviene). |
+| `conviviente` | `True` si el beneficiario de las funciones del cónyuge es conviviente civil (Ley N° 20.830): misma fórmula y mismo valor; documenta el rol. |
 | `agno_vector` | Año del vector de tasas para Retiro Programado. Sin él, solo un `fsiniestro` anterior a 2014 usa por defecto el vector de su año. |
 | `agno_actual` | Año de cálculo; ajusta las tablas por mejoramiento y, sin `fsiniestro`, fija la tabla vigente al 31 de diciembre de ese año (por defecto, el año actual). |
 | `rv` | Tasa de renta vitalicia. Si se entrega, el CNU es de RV. |
@@ -183,6 +197,10 @@ cnu sobrev-hijo 10 --mujer --rp 0.03            # sobrevivencia de hijo no invá
 cnu hijo-inv 65 30 --rp 0.03 --agno-actual 2026 # hijo inválido total 15% (tabla mi, sin edad límite)
 cnu hijo-inv 65 21 --parcial --hijo-mujer --rp 0.03   # hijo inválido parcial 15%/11%
 cnu sobrev-hijo-inv 21 --mujer --rp 0.03        # sobrevivencia de hijo inválido total 15%
+cnu conyuge-ch 65 63 10 --rp 0.03 --agno-actual 2026  # cónyuge con hijos 50%/60% (hijo menor de 10 años)
+cnu conyuge-ch 65 63 10 --hijo-invalido --rp 0.03     # cónyuge con hijo inválido 50%
+cnu sobrev-conyuge-ch 63 10 --mujer --rp 0.03         # sobrevivencia de cónyuge con hijos 50%/60%
+cnu conyuge 65 63 --conviviente --rp 0.03             # conviviente civil (mismo valor que el cónyuge)
 cnu faj 65 62 --rp 0.03 --agno-vector 2013
 cnu proy 65 --faj --csv --rp 0.03 > trayectoria.csv
 cnu tablas
@@ -198,6 +216,9 @@ CNU RP para hijo no inválido 15% (tablas cb2020h cb2020h), tasa 3% en el año 2
 $ cnu hijo-inv 65 30 --rp 0.03 --agno-actual 2026
 CNU RP para hijo inválido total 15% (tablas cb2020h mi2020h), tasa 3% en el año 2026
  1.257455
+$ cnu conyuge-ch 65 63 10 --rp 0.03 --agno-actual 2026
+CNU RP para cónyuge con hijos 50%/60% (tablas cb2020h b2020m), tasa 3% en el año 2026
+ 2.409035
 ```
 
 ## Estado normativo
@@ -252,18 +273,24 @@ históricos: con fecha de cálculo igual o posterior a `cnu.DEROGACION_FAJ`
 
 | Cubierto | Pendiente |
 |---|---|
-| Afiliado (`cnu_afiliado`) | Cónyuge con hijos |
-| Cónyuge sin hijos, pensión de vejez (`cnu_conyuge`) | Conviviente civil |
-| Sobrevivencia de cónyuge sin hijos (`cnu_sobrevivencia_conyuge`) | Hijos sin cónyuge ni madre o padre con derecho a pensión (letras 1.f, 1.g, 2.g y 2.h, porcentaje con 0,5/n) |
-| Hijo no inválido, 15% hasta los 24 años, pensión de vejez o invalidez (`cnu_hijo`, letra 2.e del Anexo N° 7) | Madre o padre de hijos de filiación no matrimonial |
-| Sobrevivencia de hijo no inválido (`cnu_sobrevivencia_hijo`, letra 1.d) | Padres del afiliado |
-| Hijo inválido total (15% vitalicio) o parcial (15% hasta los 24 años y 11% después), con tabla de inválidos, pensión de vejez o invalidez (`cnu_hijo_invalido`, letra 2.f) | Cuota mortuoria |
+| Afiliado (`cnu_afiliado`) | Hijos sin cónyuge ni madre o padre con derecho a pensión (letras 1.f, 1.g, 2.g y 2.h, porcentaje con 0,5/n) |
+| Cónyuge sin hijos, pensión de vejez (`cnu_conyuge`, letra 2.b del Anexo N° 7) | Conviviente civil sin hijos comunes que concurre con hijos del causante (letras 1.m, 1.o, 2.n y 2.p, 15% mientras haya hijos con derecho) |
+| Sobrevivencia de cónyuge sin hijos (`cnu_sobrevivencia_conyuge`, letra 1.a) | Madre o padre de hijos de filiación no matrimonial |
+| Cónyuge con hijos con derecho a pensión: 50% hasta los 24 años del hijo menor y 60% después, o 50% vitalicio con algún hijo inválido, pensión de vejez o invalidez (`cnu_conyuge_con_hijos`, letras 2.c y 2.d) | Padres del afiliado |
+| Sobrevivencia de cónyuge con hijos (`cnu_sobrevivencia_conyuge_con_hijos`, letras 1.b y 1.c) | Cuota mortuoria |
+| Conviviente civil sin hijos o con hijos comunes (`conviviente=True` en las funciones del cónyuge; letras 1.l, 1.n, 1.p, 2.m, 2.o y 2.q, misma fórmula con `a` en lugar de `y`) | |
+| Hijo no inválido, 15% hasta los 24 años, pensión de vejez o invalidez (`cnu_hijo`, letra 2.e) | |
+| Sobrevivencia de hijo no inválido (`cnu_sobrevivencia_hijo`, letra 1.d) | |
+| Hijo inválido total (15% vitalicio) o parcial (15% hasta los 24 años y 11% después), con tabla de inválidos, pensión de vejez o invalidez (`cnu_hijo_invalido`, letra 2.f) | |
 | Sobrevivencia de hijo inválido total o parcial (`cnu_sobrevivencia_hijo_invalido`, letra 1.e) | |
 
 Las funciones del hijo reciben su edad desde los 0 años; las del hijo no
 inválido devuelven 0 desde los 24 y las del hijo inválido no tienen edad
-límite. La elegibilidad (por ejemplo, la calidad de estudiante entre los 18 y
-los 24 años, o la invalidez declarada y su grado) es un dato de entrada que el
+límite. Las del cónyuge con hijos reciben la edad del hijo menor con derecho
+(`h`) y un indicador de hijo inválido; con `h` de 24 o más devuelven
+exactamente el valor del cónyuge sin hijos. La elegibilidad (por ejemplo, la
+calidad de estudiante entre los 18 y los 24 años, la invalidez declarada y su
+grado, o la existencia de la unión civil) es un dato de entrada que el
 paquete no valida.
 
 ### Ley N° 21.735

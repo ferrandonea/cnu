@@ -6,8 +6,12 @@ Anexo N 7 del Compendio de Normas de la Superintendencia de Pensiones, mas
 las formulas del hijo no invalido (:func:`cnu_hijo`, letra e del punto 2, y
 :func:`cnu_sobrevivencia_hijo`, letra d del punto 1) y del hijo invalido total
 o parcial (:func:`cnu_hijo_invalido`, letra f del punto 2, y
-:func:`cnu_sobrevivencia_hijo_invalido`, letra e del punto 1), que no tienen
-rutina Mata. Todas se calculan sobre el nucleo comun :func:`anualidad`, que admite
+:func:`cnu_sobrevivencia_hijo_invalido`, letra e del punto 1) y del conyuge
+con hijos con derecho a pension (:func:`cnu_conyuge_con_hijos`, letras c y d
+del punto 2, y :func:`cnu_sobrevivencia_conyuge_con_hijos`, letras b y c del
+punto 1), que no tienen rutina Mata. El conviviente civil (Ley N 20.830) se
+calcula con las funciones del conyuge, cuyas formulas son identicas
+(``conviviente=True``). Todas se calculan sobre el nucleo comun :func:`anualidad`, que admite
 las variantes del Anexo (limite de periodos, condicion de fallecimiento del
 afiliado, ajuste temporal por pago mensual y porcentaje del articulo 58 del
 D.L. N 3.500).
@@ -483,8 +487,10 @@ def cnu_conyuge(
     pasos: bool = False,
     dir_tablas=None,
     dir_vectores=None,
+    conviviente: bool = False,
 ) -> float:
-    """CNU para conyuge sin hijos de un afiliado (pension de vejez).
+    """CNU para conyuge (o conviviente civil) sin hijos de un afiliado
+    (pension de vejez o invalidez; letra b del punto 2 del Anexo N 7).
 
     Equivale a ``cnu_cnyg_s_hi`` / ``cnu_2_2``. El resultado se suma al de
     :func:`cnu_afiliado` para obtener el CNU total.
@@ -495,6 +501,11 @@ def cnu_conyuge(
     :param cony_mujer: ``True`` si el conyuge es mujer.
     :param tabla: tabla del afiliado (p.ej. ``"rv2009"``; por defecto ``"vigente"``).
     :param tabla_benef: tabla del beneficiario (p.ej. ``"b2006"``; por defecto ``"vigente"``).
+    :param conviviente: ``True`` si el beneficiario es conviviente civil sin
+        hijos comunes ni hijos del causante con derecho a pension (letra m del
+        punto 2, incorporada por la NCG N 153 de 2015): la formula es la
+        misma con ``a`` (edad del conviviente) en lugar de ``y`` y el valor es
+        identico; el parametro documenta el rol del beneficiario.
 
     La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
     como en :func:`cnu_afiliado`.
@@ -526,8 +537,10 @@ def cnu_sobrevivencia_conyuge(
     pasos: bool = False,
     dir_tablas=None,
     dir_vectores=None,
+    conviviente: bool = False,
 ) -> float:
-    """CNU de pension de sobrevivencia para conyuge sin hijos.
+    """CNU de pension de sobrevivencia para conyuge (o conviviente civil) sin
+    hijos (letra a del punto 1 del Anexo N 7).
 
     Equivale a ``cnu_sobr_cnyg_s_hi`` / ``cnu_1_1``.
 
@@ -535,6 +548,9 @@ def cnu_sobrevivencia_conyuge(
     :param mujer: ``True`` si el conyuge es mujer.
     :param tabla_benef: tabla de mortalidad del beneficiario (p.ej. ``"b2006"``;
         por defecto ``"vigente"``).
+    :param conviviente: ``True`` si el beneficiario es conviviente civil sin
+        hijos comunes ni hijos del causante con derecho a pension (letra l del
+        punto 1): misma formula con ``a`` en lugar de ``y`` y valor identico.
 
     La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
     como en :func:`cnu_afiliado`.
@@ -675,16 +691,49 @@ def cnu_sobrevivencia_hijo(
                      pasos=pasos, encabezado=encabezado, temporal=True)
 
 
-def _tramos_hijo_invalido_parcial(vitalicia: float, temporal: float, h: int, pasos: bool) -> float:
-    """Hijo invalido parcial menor de 24: 15% de la anualidad temporal hasta
-    los 24 y 11% de la diferida desde entonces (vitalicia menos temporal),
-    cada una con su propio ajuste 11/24, redondeando una sola vez."""
+def _tramos_edad_limite(
+    vitalicia: float, temporal: float, h: int, pasos: bool, fraccion_temporal: float, fraccion_diferida: float
+) -> float:
+    """Dos tramos separados por la edad limite del hijo de edad ``h`` (menor de
+    24): ``fraccion_temporal`` de la anualidad temporal hasta que cumple 24 y
+    ``fraccion_diferida`` de la diferida desde entonces (vitalicia menos
+    temporal), cada una con su propio ajuste 11/24, redondeando una sola vez.
+    Sirve al hijo invalido parcial (15%/11%) y al conyuge con hijos (50%/60%)."""
     diferida = vitalicia - temporal
     n = EDAD_LIMITE_HIJO - h
     if pasos:
-        print(f"tramos: 15% * {temporal:.6f} (t = 0..{n - 1}, hasta los {EDAD_LIMITE_HIJO}) "
-              f"+ 11% * {diferida:.6f} (t >= {n})")
-    return _redondear(FRACCION_HIJO * temporal + FRACCION_HIJO_INVALIDO_PARCIAL * diferida)
+        print(f"tramos: {fraccion_temporal:.0%} * {temporal:.6f} (t = 0..{n - 1}, hasta los {EDAD_LIMITE_HIJO} "
+              f"del hijo) + {fraccion_diferida:.0%} * {diferida:.6f} (t >= {n})")
+    return _redondear(fraccion_temporal * temporal + fraccion_diferida * diferida)
+
+
+def _tramos_hijo_invalido_parcial(vitalicia: float, temporal: float, h: int, pasos: bool) -> float:
+    """Hijo invalido parcial menor de 24: 15% hasta los 24 y 11% despues."""
+    return _tramos_edad_limite(vitalicia, temporal, h, pasos, FRACCION_HIJO, FRACCION_HIJO_INVALIDO_PARCIAL)
+
+
+def _tramos_conyuge_con_hijos(vitalicia: float, temporal, y: int, h: int, hijo_invalido: bool, pasos: bool) -> float:
+    """Porcentaje del conyuge con hijos sobre su anualidad bruta ``vitalicia``:
+    50% vitalicio con algun hijo invalido; 60% vitalicio (como sin hijos) si
+    el hijo menor ya tiene 24; 50% vitalicio si el conyuge supera la edad
+    maxima antes de que el hijo cumpla 24 (el tramo diferido es nulo); en
+    otro caso 50%/60% por tramos, con ``temporal(periodos)`` la anualidad
+    temporal bruta de ese numero de periodos."""
+    if hijo_invalido:
+        if pasos:
+            print("conyuge con algun hijo invalido con derecho a pension: 50% vitalicio")
+        return _redondear(FRACCION_CONYUGE_CON_HIJOS * vitalicia)
+    if h >= EDAD_LIMITE_HIJO:
+        if pasos:
+            print(f"hijo menor de {h} agnos: sin derecho desde los {EDAD_LIMITE_HIJO}, 60% vitalicio como sin hijos")
+        return _redondear(FRACCION_CONYUGE * vitalicia)
+    if y + EDAD_LIMITE_HIJO - h > EDAD_MAXIMA:
+        if pasos:
+            print(f"conyuge de {y} agnos supera los {EDAD_MAXIMA} antes de que el hijo cumpla {EDAD_LIMITE_HIJO}: "
+                  "50% vitalicio")
+        return _redondear(FRACCION_CONYUGE_CON_HIJOS * vitalicia)
+    return _tramos_edad_limite(vitalicia, temporal(EDAD_LIMITE_HIJO - 1 - h), h, pasos,
+                               FRACCION_CONYUGE_CON_HIJOS, FRACCION_CONYUGE)
 
 
 def cnu_hijo_invalido(
@@ -841,6 +890,174 @@ def cnu_sobrevivencia_hijo_invalido(
         return _redondear(FRACCION_HIJO_INVALIDO_PARCIAL * vitalicia)
     temporal = _anualidad_bruta(qx, h, tasas, EDAD_LIMITE_HIJO - 1 - h, AJUSTE_MENSUAL, temporal=True)
     return _tramos_hijo_invalido_parcial(vitalicia, temporal, h, pasos)
+
+
+def cnu_conyuge_con_hijos(
+    x: int,
+    y: int,
+    h: int,
+    cot_mujer: bool = False,
+    cony_mujer: bool = True,
+    hijo_invalido: bool = False,
+    tabla: str = TABLA_AFILIADO,
+    tabla_benef: str = TABLA_BENEFICIARIO,
+    agno_vector: int | None = AGNO_VECTOR,
+    agno_actual: int | None = None,
+    rv: float | None = None,
+    rp: float | None = None,
+    fsiniestro: int = 0,
+    pasos: bool = False,
+    dir_tablas=None,
+    dir_vectores=None,
+    conviviente: bool = False,
+) -> float:
+    """CNU del conyuge (o conviviente civil) con hijos con derecho a pension
+    de un afiliado pensionado por vejez o invalidez (letras c y d del punto 2
+    del Anexo N 7). Sin rutina Mata equivalente.
+
+    Con ``h`` la edad del hijo menor no invalido con derecho, ``z = 24``
+    (:data:`EDAD_LIMITE_HIJO`), ``y' = y + z - h`` y ``x' = x + z - h`` (edades
+    del conyuge y del afiliado cuando ese hijo cumple 24), ``l`` los
+    supervivientes de cada tabla e ``i_t`` la tasa del periodo ``t``, la letra
+    c (modificada por la NCG N 260 de 2020) define::
+
+        cnu = 0,5 * sum_{t=0}^{w} l_{y+t} (1 - l_{x+t}/l_x) / (l_y (1+i_t)^t)
+              + 0,1 * sum_{t=0}^{w} l_{y'+t} (1 - l_{x'+t}/l_x) / (l_y (1+i_{y'-y+t})^{y'-y+t})
+              - 0,1 * 11/24 * l_{y'} (1 - l_{x'}/l_x) / (l_y (1+i_{y'-y})^{y'-y})
+
+    Es la anualidad del conyuge condicionada al fallecimiento del afiliado
+    (``1 - l^x_t``, como en :func:`cnu_conyuge`) en dos tramos del articulo 58
+    del D.L. N 3.500: 50% (:data:`FRACCION_CONYUGE_CON_HIJOS`) mientras el
+    hijo menor tiene derecho, es decir, de la anualidad temporal hasta ``y'``
+    (con el ajuste temporal 11/24 de :func:`cnu_hijo`), y 60%
+    (:data:`FRACCION_CONYUGE`) de la anualidad diferida desde entonces
+    (vitalicia menos temporal): ``0,5 * temporal + 0,6 * (vitalicia -
+    temporal)``, que reordenado es la formula del Anexo. Con ``h >= 24`` no
+    hay tramo al 50% y el resultado coincide con :func:`cnu_conyuge`; si el
+    conyuge supera los 110 agnos antes de ``y'`` el tramo al 60% es nulo y
+    queda el 50% vitalicio.
+
+    Con ``hijo_invalido`` (letra d: conyuge con algun hijo invalido con derecho
+    a pension) el hijo no pierde el derecho y el conyuge queda al 50%
+    vitalicio; ``h`` no interviene::
+
+        cnu = 0,5 * sum_{t=0}^{w} l_{y+t} (1 - l_{x+t}/l_x) / (l_y (1+i_t)^t)
+
+    El resultado se suma al de :func:`cnu_afiliado` y al de cada hijo
+    (:func:`cnu_hijo`, :func:`cnu_hijo_invalido`) para obtener el CNU total.
+    No cubre al conviviente civil sin hijos comunes que concurre con hijos del
+    causante (letras n y p del punto 2, 15% mientras haya hijos con derecho).
+
+    :param x: edad del afiliado.
+    :param y: edad del conyuge.
+    :param h: edad del hijo menor con derecho a pension (desde 0 agnos); con
+        24 o mas el resultado es el de :func:`cnu_conyuge`. Se ignora con
+        ``hijo_invalido``.
+    :param cot_mujer: ``True`` si el afiliado es mujer.
+    :param cony_mujer: ``True`` si el conyuge es mujer.
+    :param hijo_invalido: ``True`` si algun hijo con derecho es invalido (50%
+        vitalicio, letra d).
+    :param tabla: tabla del afiliado (p.ej. ``"rv2009"``; por defecto ``"vigente"``).
+    :param tabla_benef: tabla del conyuge, con rol de beneficiario (p.ej.
+        ``"b2006"``; por defecto ``"vigente"``).
+    :param conviviente: ``True`` si el beneficiario es conviviente civil con
+        hijos comunes con el causante (letras o y q del punto 2, NCG N 153 de
+        2015): misma formula con ``a`` en lugar de ``y`` y valor identico.
+
+    La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
+    como en :func:`cnu_afiliado`.
+    """
+    x, y, h = edad_entera(x), edad_entera(y), edad_entera(h)
+    agno_actual = _agno(agno_actual)
+    tm_cot = tabla_mortalidad(tabla, ROL_AFILIADO, cot_mujer, fsiniestro, agno_actual, dir_tablas)
+    tm_cony = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, cony_mujer, fsiniestro, agno_actual, dir_tablas)
+    qx_cot, qx_cony = tm_cot.qx_mejorado(agno_actual, x), tm_cony.qx_mejorado(agno_actual, y)
+    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores, fsiniestro)
+    encabezado = f"tablas {_etiqueta_tabla(tm_cot)} {_etiqueta_tabla(tm_cony)}"
+    # Anualidad vitalicia del conyuge condicionada al fallecimiento del
+    # afiliado en el periodo (sin ajuste 11/24), la misma de cnu_conyuge.
+    vitalicia = _anualidad_bruta(qx_cony, y, tasas, EDAD_MAXIMA - y + 1, 0.0, qx_cot, x, pasos, encabezado)
+
+    def temporal(periodos: int) -> float:
+        return _anualidad_bruta(qx_cony, y, tasas, periodos, AJUSTE_MENSUAL, qx_cot, x, temporal=True)
+
+    return _tramos_conyuge_con_hijos(vitalicia, temporal, y, h, hijo_invalido, pasos)
+
+
+def cnu_sobrevivencia_conyuge_con_hijos(
+    y: int,
+    h: int,
+    mujer: bool = False,
+    hijo_invalido: bool = False,
+    tabla_benef: str = TABLA_BENEFICIARIO,
+    agno_vector: int | None = AGNO_VECTOR,
+    agno_actual: int | None = None,
+    rv: float | None = None,
+    rp: float | None = None,
+    fsiniestro: int = 0,
+    pasos: bool = False,
+    dir_tablas=None,
+    dir_vectores=None,
+    conviviente: bool = False,
+) -> float:
+    """CNU de pension de sobrevivencia para conyuge (o conviviente civil) con
+    hijos con derecho a pension (letras b y c del punto 1 del Anexo N 7). Sin
+    rutina Mata equivalente.
+
+    Con ``h`` la edad del hijo menor no invalido con derecho, ``z = 24``
+    (:data:`EDAD_LIMITE_HIJO`) e ``y' = y + z - h``, la letra b define::
+
+        cnu = 0,5 * [ sum_{t=0}^{w} l_{y+t} / (l_y (1+i_t)^t) - 11/24 ]
+              + 0,1 * [ sum_{t=0}^{w} l_{y'+t} / (l_y (1+i_{y'-y+t})^{y'-y+t})
+                        - 11/24 * l_{y'} / (l_y (1+i_{y'-y})^{y'-y}) ]
+
+    Es la anualidad vitalicia del conyuge en dos tramos del articulo 58 del
+    D.L. N 3.500: 50% (:data:`FRACCION_CONYUGE_CON_HIJOS`) de la anualidad
+    temporal hasta ``y'`` (con el ajuste temporal de
+    :func:`cnu_sobrevivencia_hijo`) y 60% (:data:`FRACCION_CONYUGE`) de la
+    diferida desde entonces (vitalicia menos temporal): ``0,5 * temporal +
+    0,6 * (vitalicia - temporal)``, que reordenado es la formula del Anexo.
+    Con ``h >= 24`` coincide con :func:`cnu_sobrevivencia_conyuge`; si el
+    conyuge supera los 110 agnos antes de ``y'`` queda el 50% vitalicio.
+
+    Con ``hijo_invalido`` (letra c: conyuge con algun hijo invalido con
+    derecho a pension) el conyuge queda al 50% vitalicio y ``h`` no
+    interviene::
+
+        cnu = 0,5 * [ sum_{t=0}^{w} l_{y+t} / (l_y (1+i_t)^t) - 11/24 ]
+
+    No cubre al conviviente civil sin hijos comunes que concurre con hijos del
+    causante (letras m y o del punto 1, 15% mientras haya hijos con derecho).
+
+    :param y: edad del conyuge.
+    :param h: edad del hijo menor con derecho a pension (desde 0 agnos); se
+        ignora con ``hijo_invalido``.
+    :param mujer: ``True`` si el conyuge es mujer.
+    :param hijo_invalido: ``True`` si algun hijo con derecho es invalido (50%
+        vitalicio, letra c).
+    :param tabla_benef: tabla de mortalidad del conyuge, con rol de
+        beneficiario (p.ej. ``"b2006"``; por defecto ``"vigente"``).
+    :param conviviente: ``True`` si el beneficiario es conviviente civil con
+        hijos comunes con el causante (letras n y p del punto 1): misma
+        formula con ``a`` en lugar de ``y`` y valor identico.
+
+    La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
+    como en :func:`cnu_afiliado`.
+    """
+    y, h = edad_entera(y), edad_entera(h)
+    agno_actual = _agno(agno_actual)
+    tm = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, mujer, fsiniestro, agno_actual, dir_tablas)
+    qx = tm.qx_mejorado(agno_actual, y)
+    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores, fsiniestro)
+    # Anualidad vitalicia del conyuge menos el ajuste por pago mensual, la
+    # misma de cnu_sobrevivencia_conyuge.
+    vitalicia = _anualidad_bruta(qx, y, tasas, EDAD_MAXIMA - y, AJUSTE_MENSUAL, pasos=pasos,
+                                 encabezado=f"tabla {_etiqueta_tabla(tm)}")
+
+    def temporal(periodos: int) -> float:
+        return _anualidad_bruta(qx, y, tasas, periodos, AJUSTE_MENSUAL, temporal=True)
+
+    return _tramos_conyuge_con_hijos(vitalicia, temporal, y, h, hijo_invalido, pasos)
 
 
 def describir(

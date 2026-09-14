@@ -173,3 +173,57 @@ def test_sobrev_hijo(capsys):
         assert main(argv) == CODIGO_ERROR_TASA
         out, err = capsys.readouterr()
         assert out == "" and "TITRP" in err
+
+
+def test_conyuge_con_hijos(capsys):
+    assert main(["conyuge-ch", "65", "63", "10", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == "CNU RP para cónyuge con hijos 50%/60% (tablas cb2020h b2020m), tasa 3% en el año 2026"
+    assert lineas[-1].strip() == "2.409035"
+    assert main(["conyuge-ch", "65", "63", "21.6", "--hijo-invalido", "--pasos", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    out = capsys.readouterr().out
+    assert "cónyuge con hijo inválido 50% (tablas cb2020h b2020m)" in out and "hijo 21.6 -> 22" in out
+    assert "t =   1:" in out and "50% vitalicio" in out
+    assert out.strip().splitlines()[-1].strip() == "2.077732"
+    assert main(["conyuge-ch", "65", "63", "21", "--pasos", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    out = capsys.readouterr().out
+    assert "tramos: 50% *" in out and out.strip().splitlines()[-1].strip() == "2.489869"
+    assert main(["conyuge-ch", "65", "63", "30", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    assert capsys.readouterr().out.strip().splitlines()[-1].strip() == "2.493278"  # como sin hijos
+
+
+def test_sobrev_conyuge_con_hijos(capsys):
+    assert main(["sobrev-conyuge-ch", "63", "10", "--mujer", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == "CNU RP para sobrevivencia de cónyuge con hijos 50%/60% (tabla b2020m), tasa 3% en el año 2026"
+    assert lineas[-1].strip() == "9.578224"
+    assert main(["sobrev-conyuge-ch", "62.6", "10", "--hijo-invalido", "--fsiniestro", "20131231"]) == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[0].startswith("CNU RP para sobrevivencia de cónyuge con hijo inválido 50% (tabla b2006h), vector 2013")
+    assert "conyuge 62.6 -> 63" in out.splitlines()[0]
+    for argv in (["conyuge-ch", "65", "63", "10", "--agno-actual", "2026"],
+                 ["sobrev-conyuge-ch", "63", "10", "--agno-actual", "2026"]):
+        assert main(argv) == CODIGO_ERROR_TASA
+        out, err = capsys.readouterr()
+        assert out == "" and "TITRP" in err
+
+
+def test_conviviente_civil(capsys):
+    assert main(["conyuge", "65", "63", "--conviviente", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == "CNU RP para conviviente civil sin hijos (tablas cb2020h b2020m), tasa 3% en el año 2026"
+    assert lineas[-1].strip() == "2.493278"
+    assert main(["conyuge", "65", "63", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    assert capsys.readouterr().out.splitlines()[0].startswith("CNU RP para cónyuge sin hijos ")
+    assert main(["sobrev", "63", "--mujer", "--conviviente", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0].startswith("CNU RP para sobrevivencia de conviviente civil sin hijos (tabla b2020m)")
+    assert lineas[-1].strip() == "10.674379"
+    assert main(["conyuge-ch", "65", "63", "10", "--conviviente", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0].startswith("CNU RP para conviviente civil con hijos 50%/60% ") and lineas[-1].strip() == "2.409035"
+    assert main(["sobrev-conyuge-ch", "63", "10", "--mujer", "--conviviente", "--hijo-invalido", "--rp", "0.03",
+                 "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0].startswith("CNU RP para sobrevivencia de conviviente civil con hijo inválido 50% ")
+    assert lineas[-1].strip() == "8.895316"
