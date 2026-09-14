@@ -1,5 +1,9 @@
 """Los ejemplos numericos del README se reproducen con el codigo."""
 
+import datetime
+import inspect
+import warnings
+
 import numpy as np
 import pytest
 
@@ -15,7 +19,10 @@ def test_ejemplos_actuales_tm2020():
     assert cnu.cnu_sobrevivencia_conyuge(63, mujer=True, rp=0.03, agno_actual=2026) == 10.674379
     assert cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2026) == pytest.approx(0.037205, abs=1e-6)
     assert cnu.faj_afiliado(65, 62, rp=0.03, agno_vector=2013, agno_actual=2026) == pytest.approx(0.004659, abs=1e-6)
-    p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, faj=True, agno_actual=2026)
+    p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, agno_actual=2026)
+    assert p.pension[0] == pytest.approx(64.6979, abs=1e-4)
+    with pytest.warns(cnu.AdvertenciaCNU, match="21.419"):
+        p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, faj=True, agno_actual=2026)
     assert p.pension[0] == pytest.approx(63.2245, abs=1e-4)
     assert p.faj == pytest.approx(0.022775, abs=1e-6)
     assert cnu.cnu_afiliado(65, fsiniestro=20230630, rp=0.03, agno_actual=2023) == 15.063535
@@ -73,3 +80,44 @@ def test_cli_ejemplo(capsys):
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "CNU RP para soltero sin hijos (tabla cb2020h), tasa 3% en el año 2026"
     assert out[1].strip() == "15.456439"
+
+
+def test_estado_normativo_y_edad_actuarial():
+    assert cnu.cnu_afiliado(65, rp=0.0345, agno_actual=2026) == 14.755007
+    assert cnu.edad_actuarial(19600915, 20260315) == 66
+    assert cnu.edad_actuarial(datetime.date(1960, 9, 15), datetime.date(2026, 3, 15)) == 66
+    assert cnu.cnu_afiliado(65.7, rp=0.0345, agno_actual=2026) == 14.322867
+    assert cnu.cnu_afiliado(65.7, rp=0.0345, agno_actual=2026) == cnu.cnu_afiliado(66, rp=0.0345, agno_actual=2026)
+    assert cnu.DEROGACION_FAJ == 20220201
+    with pytest.warns(cnu.AdvertenciaCNU, match="21.419"):
+        assert cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2026) == pytest.approx(0.037205, abs=1e-6)
+
+
+def test_ningun_ejemplo_depende_de_una_tasa_por_defecto():
+    """Sin tasa, todo falla: los ejemplos del README pasan rp, rv, agno_vector o un siniestro anterior a 2014."""
+    for fn in (cnu.cnu_afiliado, cnu.faj_afiliado, cnu.proyectar_cnu):
+        with pytest.raises(ValueError, match="TITRP"):
+            fn(65, agno_actual=2026)
+    with pytest.raises(ValueError, match="TITRP"):
+        cnu.proyectar_pension(65, agno_actual=2026)
+    with pytest.raises(ValueError, match="TITRP"):
+        cnu.cnu_conyuge(65, 63, agno_actual=2026)
+    with pytest.warns(cnu.AdvertenciaCNU, match="sin tasa"):
+        assert np.isnan(cnu.cnu_afiliado_vec([65], agno_actual=2026)).all()
+
+
+def test_defaults_publicos_sin_2013_ni_0_03():
+    publicas = [getattr(cnu, n) for n in cnu.__all__ if callable(getattr(cnu, n)) and not isinstance(getattr(cnu, n), type)]
+    for fn in publicas:
+        for nombre, p in inspect.signature(fn).parameters.items():
+            if nombre in ("rp", "rv", "agno_vector"):
+                assert p.default in (None, inspect.Parameter.empty), (fn.__name__, nombre, p.default)
+            assert p.default not in (2013, 0.03), (fn.__name__, nombre)
+    assert cnu.AGNO_VECTOR is None
+
+
+def test_version_cli(capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["--version"])
+    assert e.value.code == 0
+    assert capsys.readouterr().out.strip() == f"cnu {cnu.__version__}" == "cnu 0.3.0"

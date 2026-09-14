@@ -5,6 +5,58 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
 El formato se basa en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 y el proyecto sigue [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-09-14
+
+Alinea los defaults del paquete con la norma vigente (PRD #8).
+
+### Added
+
+- Regla única de tasa (`tasas_por_periodo`, `agno_vector_efectivo`,
+  `INICIO_TITRP`): `rv`, `rp` (TITRP) o `agno_vector` explícitos; sin ellos,
+  solo un `fsiniestro` anterior al 1 de enero de 2014 usa el vector del año
+  del siniestro. `describir` y la primera línea de la CLI muestran la tasa
+  efectiva (`tasa 3.45%` o `vector 2013`).
+- Las funciones vectoriales y `faj_afiliado_vec` resuelven la tasa fila a
+  fila; las filas sin tasa determinable quedan en `nan` y se acumulan en una
+  `AdvertenciaCNU` que distingue "sin tasa" de "vector inexistente".
+- `edad_actuarial(fecha_nacimiento, fecha_calculo)`: edad actuarial a partir
+  de dos fechas (`YYYYMMDD` o `datetime.date`), con el medio hacia arriba.
+- `DEROGACION_FAJ` (20220201) y `faj_derogado`; advertencia `AdvertenciaCNU`
+  en el FAJ y en `proyectar_pension(faj=True)` para fechas de cálculo desde
+  el 1 de febrero de 2022.
+- CLI: sin tasa determinable termina con el mensaje de la API en stderr y
+  código de salida 2, sin traza; las advertencias van a stderr sin cambiar el
+  código; las edades posicionales admiten decimales y se indica la edad
+  actuarial usada.
+- README: sección "Estado normativo" (alcance, TITRP, edad actuarial, FAJ
+  derogado, beneficiarios pendientes, Ley N° 21.735) y referencias al
+  Compendio y a la página de tasas de la SP.
+
+### Changed
+
+- **Incompatible:** desaparece el vector de tasas por defecto
+  (`AGNO_VECTOR` pasa de 2013 a `None`). Sin `rv`, `rp` ni `agno_vector`, y
+  sin siniestro anterior a 2014, las funciones escalares, las proyecciones y
+  el FAJ lanzan `ValueError`; los cálculos históricos deben indicar
+  `agno_vector` explícito.
+- **Incompatible:** `faj_afiliado` y `proyectar_pension` pierden el default
+  `rp=0.03`, y la CLI (`cnu faj`, `cnu proy`) el default `--rp 0.03`.
+- **Incompatible:** las edades se redondean a edad actuarial (entero más
+  cercano, medio hacia arriba) en vez de truncarse; `65.7` ahora se calcula
+  como 66. La validación del rango 20-110 ocurre tras el redondeo.
+- `faj_afiliado` usa el vector para la trayectoria del CNU solo cuando
+  `agno_vector` es explícito; en caso contrario, la misma tasa constante `rp`
+  de la capitalización (como `faj_afiliado_vec`).
+- Las filas vectoriales con `rv` faltante ya no quedan en `nan` en silencio:
+  siguen la regla general de tasa.
+
+### Deprecated
+
+- Factor de Ajuste (`faj_afiliado`, `faj_afiliado_vec`, `calcular_faj`,
+  `proyectar_pension(faj=True)`, `cnu faj`, `cnu proy --faj`): derogado por la
+  Ley N° 21.419 desde el 1 de febrero de 2022. Se conserva solo para
+  reproducir cálculos históricos y advierte con fechas posteriores.
+
 ## [0.2.0] — 2026-09-14
 
 ### Added

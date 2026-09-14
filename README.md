@@ -7,8 +7,12 @@ de Pensiones), cuyo código original se conserva en `ado/` y `man/`.
 
 Implementa las fórmulas de CNU para pensión de vejez de afiliado y de cónyuge
 sin hijos, para pensión de sobrevivencia de cónyuge sin hijos, la proyección
-de pensión en Retiro Programado y el Factor de Ajuste (FAJ), con todas las
-tablas de mortalidad normativas desde 1985 hasta las TM2020 vigentes.
+de pensión en Retiro Programado y el Factor de Ajuste (FAJ, derogado desde
+2022 y conservado solo para cálculos históricos), con todas las tablas de
+mortalidad normativas desde 1985 hasta las TM2020 vigentes. La sección
+[Estado normativo](#estado-normativo) resume qué está alineado con el
+Compendio de Normas de la Superintendencia de Pensiones (SP) y qué debe
+entregar el usuario.
 
 ## Instalación
 
@@ -45,11 +49,13 @@ cnu.cnu_conyuge(65, 63, cony_mujer=True, rp=0.03, agno_actual=2026)   # 2.493278
 # CNU de sobrevivencia para cónyuge sin hijos
 cnu.cnu_sobrevivencia_conyuge(63, mujer=True, rp=0.03, agno_actual=2026)  # 10.674379  (b2020m)
 
-# Factor de ajuste
+# Factor de ajuste (derogado desde el 1-2-2022: con fecha posterior emite AdvertenciaCNU)
 cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2026)      # 0.037205
 cnu.faj_afiliado(65, 62, rp=0.03, agno_vector=2013, agno_actual=2026)  # 0.004659
 
-# Proyección de pensión en retiro programado (con o sin FAJ)
+# Proyección de pensión en retiro programado (con o sin FAJ; con faj=True, misma advertencia)
+p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, agno_actual=2026)
+p.edad, p.saldo, p.pension                       # p.pension[0] = 64.6979
 p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, faj=True, agno_actual=2026)
 p.edad, p.saldo, p.pension, p.faj, p.saldo_faj   # p.pension[0] = 63.2245, p.faj = 0.022775
 p.to_dataframe()        # requiere pandas
@@ -166,6 +172,75 @@ $ cnu afil 65 --fsiniestro 20240315 --rp 0.03
 CNU RP para soltero sin hijos (tabla cb2020h), tasa 3% en el año 2026
 15.456439
 ```
+
+## Estado normativo
+
+### Alineado con el Compendio de Normas
+
+* **Fórmulas del CNU** del Anexo N° 7 del Libro III: afiliado, cónyuge sin
+  hijos (pensión de vejez) y sobrevivencia de cónyuge sin hijos, con el ajuste
+  de 11/24 por pago mensual, tal como las rutinas Mata originales.
+* **Tablas de mortalidad y vigencias** del Título X del Libro III: desde las
+  tablas de 1985 hasta las TM2020, seleccionadas automáticamente por rol,
+  sexo y fecha del siniestro (o fin del año de cálculo); factores de
+  mejoramiento del Anexo N° 9, históricos y bidimensionales 2021-2036.
+* **Tasa de descuento**: desde el 1 de enero de 2014 rige la tasa de interés
+  técnico del retiro programado (TITRP) que fija la SP, por lo que el paquete
+  no tiene vector de tasas por defecto; solo un siniestro anterior a esa fecha
+  usa el vector del año del siniestro.
+* **Edad actuarial**, como la define el Capítulo III (Retiro Programado) de
+  la Letra F del Título I del Libro III: la edad a la fecha de cálculo
+  redondeada al entero más cercano, subiendo desde los seis meses.
+
+### Lo que debe entregar el usuario
+
+* **La TITRP vigente.** La SP la publica mediante circular en la página
+  [Tasas de interés para el cálculo de los retiros programados y las rentas
+  temporales](https://www.spensiones.cl/apps/tasas/tasdescto.php); a
+  septiembre de 2026 rige 3,45% desde julio de 2026 (Circular N° 2.417). En
+  cada recálculo trimestral se pasa la tasa del trimestre como `rp` (o `--rp`
+  en la CLI); para renta vitalicia, la tasa de la póliza en `rv`.
+
+  ```python
+  cnu.cnu_afiliado(65, rp=0.0345, agno_actual=2026)   # 14.755007
+  ```
+
+* **La edad actuarial** del afiliado y de los beneficiarios a la fecha de
+  cálculo: `cnu.edad_actuarial(fecha_nacimiento, fecha_calculo)` la obtiene a
+  partir de dos fechas (`YYYYMMDD` o `datetime.date`), y toda función acepta
+  edades decimales que redondea con la misma regla.
+* **El año de cálculo** (`agno_actual`) o la **fecha del siniestro**
+  (`fsiniestro`), que determinan la tabla vigente y el mejoramiento.
+
+### Factor de Ajuste derogado
+
+La Ley N° 21.419 eliminó el Factor de Ajuste del retiro programado a contar
+del 1 de febrero de 2022, y el Capítulo V de la Letra F del Título I del
+Libro III quedó derogado. `faj_afiliado`, `faj_afiliado_vec` y
+`proyectar_pension(faj=True)` se conservan para reproducir cálculos
+históricos: con fecha de cálculo igual o posterior a `cnu.DEROGACION_FAJ`
+(20220201) emiten una `AdvertenciaCNU` y devuelven el valor de todos modos.
+
+### Beneficiarios cubiertos y pendientes
+
+| Cubierto | Pendiente |
+|---|---|
+| Afiliado (`cnu_afiliado`) | Hijos (con y sin derecho a pensión) |
+| Cónyuge sin hijos, pensión de vejez (`cnu_conyuge`) | Cónyuge con hijos |
+| Sobrevivencia de cónyuge sin hijos (`cnu_sobrevivencia_conyuge`) | Conviviente civil |
+| | Madre o padre de hijos de filiación no matrimonial |
+| | Padres del afiliado |
+| | Cuota mortuoria |
+
+### Ley N° 21.735
+
+La Ley N° 21.735 (marzo de 2025) introdujo una banda de variación máxima del
+10% para los recálculos trimestrales de las pensiones en retiro programado
+(desde el 1 de septiembre de 2025) y la Compensación por Diferencias de
+Expectativa de Vida (CEV), regulada en la Letra C del Título XIX del Libro
+III. Ninguna de las dos modifica la fórmula del CNU: la banda actúa sobre la
+pensión resultante y la CEV es un beneficio adicional. No están
+implementadas en este paquete.
 
 ## Tablas de mortalidad
 
@@ -295,8 +370,28 @@ El módulo `cnu` de Stata, escrito fundamentalmente en Mata, se conserva en
   necesarios): https://www.spensiones.cl/portal/compendio/596/w3-propertyvalue-3483.html
 * Superintendencia de Pensiones, Anexo N° 9: tablas TM2020 y fórmula de
   mejoramiento bidimensional: https://www.spensiones.cl/portal/compendio/596/fo-article-15659.pdf
+* Superintendencia de Pensiones, Compendio, Libro III, Título I, Letra F,
+  Capítulo III. Retiro Programado (cálculo, recálculo y edad actuarial):
+  https://www.spensiones.cl/portal/compendio/596/w3-propertyvalue-3223.html
+* Superintendencia de Pensiones, Compendio, Libro III, Título I, Letra F,
+  Capítulo V. Aplicación de un Factor de Ajuste al Cálculo del Retiro
+  Programado (derogado por la Ley N° 21.419 desde el 1 de febrero de 2022):
+  https://www.spensiones.cl/portal/compendio/596/w3-propertyvalue-3225.html
+* Superintendencia de Pensiones, Tasas de interés para el cálculo de los
+  retiros programados y las rentas temporales (TITRP vigente por circular):
+  https://www.spensiones.cl/apps/tasas/tasdescto.php
+* Superintendencia de Pensiones, Nota Técnica N° 8: Tasa de Interés Técnica de
+  Retiro Programado y Rentas Temporales y su efecto en el cálculo de las
+  pensiones: https://www.spensiones.cl/portal/institucional/594/w3-article-15569.html
 * Superintendencia de Pensiones, Nota Técnica N° 9 (noviembre de 2024):
   https://www.spensiones.cl/portal/institucional/594/articles-16151_recurso_1.pdf
+* Superintendencia de Pensiones, Compendio, Libro III, Título XIX, Letra C.
+  Compensación por Diferencias de Expectativa de Vida (Ley N° 21.735):
+  https://www.spensiones.cl/portal/compendio/596/w3-propertyvalue-10821.html
+* Superintendencia de Pensiones, Ley N° 21.735 (26 de marzo de 2025):
+  https://www.spensiones.cl/portal/institucional/594/w3-article-16483.html
+  y banda de variación máxima para el retiro programado:
+  https://www.spensiones.cl/portal/institucional/594/w3-article-16568.html
 * Comisión para el Mercado Financiero, NCG N° 495: publicación de las tablas
   TM2020: https://www.cmfchile.cl/portal/principal/623/w4-propertyvalue-48722.html
 
