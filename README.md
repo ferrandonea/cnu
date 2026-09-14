@@ -104,12 +104,15 @@ import numpy as np
 edades = np.array([55, 65, 75])
 cnu.cnu_afiliado_vec(edades, mujer=[0, 1, 0], rp=0.03, agno_actual=2026)
 cnu.cnu_afiliado_vec(edades, fsiniestro=[20130101, 20200101, 20240101], rp=0.03)   # rv2009, cb2014, cb2020
-cnu.cnu_conyuge_vec(edades, [53, 63, 73], cony_mujer=True, rp=[0.03, np.nan, 0.03])
+cnu.cnu_conyuge_vec(edades, [53, 63, 73], cony_mujer=True, rp=[0.03, np.nan, 0.03])  # fila 1 sin tasa -> nan
 cnu.faj_afiliado_vec(edades, rp=0.03)
 ```
 
-Las filas con edad fuera de [20, 110] o con vector de tasas inexistente quedan
-en `nan` y se emite una advertencia `cnu.AdvertenciaCNU` con los índices.
+La tasa se resuelve fila a fila con la misma regla que las funciones
+escalares (`rv`, `rp`, `agno_vector` o `fsiniestro` anterior a 2014 de cada
+observación). Las filas con edad fuera de [20, 110], sin tasa determinable o
+con vector de tasas inexistente quedan en `nan` y se emite una advertencia
+`cnu.AdvertenciaCNU` con los índices y el motivo.
 
 ### Opciones comunes
 

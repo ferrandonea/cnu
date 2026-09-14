@@ -3,8 +3,17 @@
 Equivalen a los comandos ``cnu_afil``, ``cnu_cnyg_s_h`` y ``cnu_sobr_cnyg_s_h``
 de Stata: cada argumento puede ser un escalar (se aplica a todas las filas) o
 un arreglo de largo ``N``. Las filas que no se pueden calcular (edad fuera de
-[20, 110], vector de tasas inexistente, o excluidas con ``incluir``) quedan en
-``nan`` y se emite un :class:`AdvertenciaCNU` con el detalle.
+[20, 110], sin tasa determinable, vector de tasas inexistente, o excluidas con
+``incluir``) quedan en ``nan`` y se emite un :class:`AdvertenciaCNU` con el
+detalle.
+
+La tasa de descuento se resuelve fila a fila con la misma regla que las
+funciones escalares (:func:`cnu.core.tasas_por_periodo`): ``rv`` o ``rp`` de
+la fila (``nan`` = no especificado), ``agno_vector`` de la fila o, sin ellos,
+el vector del agno del ``fsiniestro`` si es anterior a 2014. Una fila sin tasa
+determinable no detiene el calculo: queda en ``nan`` y se acumula en la
+advertencia con el motivo ("sin tasa: desde 2014 se requiere rp" o "vector
+inexistente").
 
 Las tablas de mortalidad (``tabla``, ``tabla_benef``; por defecto
 ``"vigente"``) se resuelven fila a fila segun el rol, el sexo y la fecha de
@@ -22,6 +31,7 @@ import numpy as np
 
 from . import core
 from .core import AGNO_VECTOR, EDAD_MAXIMA, EDAD_MINIMA, TABLA_AFILIADO, TABLA_BENEFICIARIO
+from .tablas import existe_vector_tasas
 
 MAX_LISTADO = 20
 
@@ -77,11 +87,21 @@ def _advertir(errores: dict[str, list[int]], mensajes: dict[str, str]) -> None:
         )
 
 
-def _sin_tasas(a: dict[str, np.ndarray], j: int, rv, rp, dir_vectores) -> bool:
-    """``True`` si :func:`cnu.core.tasas_por_periodo` no puede resolver la fila ``j``."""
-    return core.tasas_por_periodo(
-        a["agno_vector"][j], rv, rp, dir_vectores, int(a["fsiniestro"][j]), estricto=False
-    ) is None
+def _motivo_sin_tasa(a: dict[str, np.ndarray], j: int, rv, rp, dir_vectores) -> str | None:
+    """Motivo por el que la fila ``j`` no tiene tasa, o ``None`` si la tiene.
+
+    Aplica la regla de :func:`cnu.core.tasas_por_periodo` con los valores de la
+    fila: ``"sin_tasa"`` si no hay ``rv``, ``rp``, ``agno_vector`` ni
+    ``fsiniestro`` anterior a 2014; ``"vector"`` si el agno resuelto no tiene
+    vector de tasas.
+    """
+    if rv is not None or rp is not None:
+        return None
+    try:
+        agno = core.agno_vector_efectivo(a["agno_vector"][j], int(a["fsiniestro"][j]))
+    except ValueError:
+        return "sin_tasa"
+    return None if existe_vector_tasas(agno, dir_vectores) else "vector"
 
 
 def cnu_afiliado_vec(
@@ -100,7 +120,8 @@ def cnu_afiliado_vec(
     """CNU de afiliado para varias observaciones (equivale a ``cnu_afil``).
 
     Vease :func:`cnu.core.cnu_afiliado` para el significado de cada argumento.
-    ``rv``/``rp`` aceptan ``nan`` por fila para indicar "no especificado".
+    ``rv``/``rp`` aceptan ``nan`` por fila para indicar "no especificado"; la
+    tasa se resuelve fila a fila (ver el modulo).
     ``tabla`` (por defecto ``"vigente"``) se resuelve por fila con el sexo
     ``mujer`` y la fecha (``fsiniestro`` o fin de ``agno_actual``) de esa fila.
     """
@@ -108,24 +129,19 @@ def cnu_afiliado_vec(
     n = len(x)
     a = _preparar(n, mujer=mujer, tabla=tabla, agno_vector=agno_vector, agno_actual=agno_actual,
                   rv=rv, rp=rp, fsiniestro=fsiniestro, incluir=incluir)
-    modo_rv = rv is not None
-    modo_rp = rp is not None
     cnu = np.full(n, np.nan)
-    errores: dict[str, list[int]] = {"menor_20": [], "mayor_110": [], "vector": []}
+    errores: dict[str, list[int]] = {"menor_20": [], "mayor_110": [], "sin_tasa": [], "vector": []}
     for j in range(n):
         if not a["incluir"][j] or math.isnan(x[j]):
             continue
         edad = core.edad_entera(x[j])
-        rv_j = _opcional(a["rv"][j]) if modo_rv else None
-        rp_j = _opcional(a["rp"][j]) if modo_rp else None
+        rv_j, rp_j = _opcional(a["rv"][j]), _opcional(a["rp"][j])
         if edad < EDAD_MINIMA:
             errores["menor_20"].append(j)
         elif edad > EDAD_MAXIMA:
             errores["mayor_110"].append(j)
-        elif _sin_tasas(a, j, rv_j, rp_j, dir_vectores):
-            errores["vector"].append(j)
-        elif modo_rv and rv_j is None:
-            continue  # RV con tasa faltante en esta fila -> nan
+        elif (motivo := _motivo_sin_tasa(a, j, rv_j, rp_j, dir_vectores)) is not None:
+            errores[motivo].append(j)
         else:
             cnu[j] = core.cnu_afiliado(
                 edad, bool(a["mujer"][j]), a["tabla"][j], _entero_o_nan(a["agno_vector"][j]),
@@ -135,6 +151,8 @@ def cnu_afiliado_vec(
     _advertir(errores, {
         "menor_20": "Los siguientes cotizantes tienen menos de 20 años",
         "mayor_110": "Los siguientes cotizantes tienen más de 110 años",
+        "sin_tasa": "Las siguientes observaciones quedan sin tasa: desde 2014 se requiere rp"
+                    " (o rv, agno_vector o fsiniestro anterior a 2014)",
         "vector": "Para las siguientes observaciones se intentó utilizar un vector inexistente",
     })
     return cnu
@@ -169,30 +187,26 @@ def cnu_conyuge_vec(
     a = _preparar(n, cot_mujer=cot_mujer, cony_mujer=cony_mujer, tabla=tabla, tabla_benef=tabla_benef,
                   agno_vector=agno_vector, agno_actual=agno_actual, rv=rv, rp=rp,
                   fsiniestro=fsiniestro, incluir=incluir)
-    modo_rv = rv is not None
-    modo_rp = rp is not None
     cnu = np.full(n, np.nan)
     errores: dict[str, list[int]] = {
-        "menor_20_cot": [], "menor_20_cony": [], "mayor_110_cot": [], "mayor_110_cony": [], "vector": [],
+        "menor_20_cot": [], "menor_20_cony": [], "mayor_110_cot": [], "mayor_110_cony": [],
+        "sin_tasa": [], "vector": [],
     }
     for j in range(n):
         if not a["incluir"][j] or math.isnan(x[j]) or math.isnan(y[j]):
             continue
         ex, ey = core.edad_entera(x[j]), core.edad_entera(y[j])
-        rv_j = _opcional(a["rv"][j]) if modo_rv else None
-        rp_j = _opcional(a["rp"][j]) if modo_rp else None
+        rv_j, rp_j = _opcional(a["rv"][j]), _opcional(a["rp"][j])
         if ex < EDAD_MINIMA:
             errores["menor_20_cot"].append(j)
         elif ey < EDAD_MINIMA:
             errores["menor_20_cony"].append(j)
         elif ex > EDAD_MAXIMA:
             errores["mayor_110_cot"].append(j)
-        elif _sin_tasas(a, j, rv_j, rp_j, dir_vectores):
-            errores["vector"].append(j)
+        elif (motivo := _motivo_sin_tasa(a, j, rv_j, rp_j, dir_vectores)) is not None:
+            errores[motivo].append(j)
         elif ey > EDAD_MAXIMA:
             errores["mayor_110_cony"].append(j)
-        elif modo_rv and rv_j is None:
-            continue
         else:
             cnu[j] = core.cnu_conyuge(
                 ex, ey, bool(a["cot_mujer"][j]), bool(a["cony_mujer"][j]), a["tabla"][j], a["tabla_benef"][j],
@@ -204,6 +218,8 @@ def cnu_conyuge_vec(
         "menor_20_cony": "Los siguientes cónyuges tienen menos de 20 años",
         "mayor_110_cot": "Los siguientes cotizantes tienen más de 110 años",
         "mayor_110_cony": "Los siguientes cónyuges tienen más de 110 años",
+        "sin_tasa": "Las siguientes observaciones quedan sin tasa: desde 2014 se requiere rp"
+                    " (o rv, agno_vector o fsiniestro anterior a 2014)",
         "vector": "Para las siguientes observaciones se intentó utilizar un vector inexistente",
     })
     return cnu
@@ -232,24 +248,19 @@ def cnu_sobrevivencia_conyuge_vec(
     n = len(y)
     a = _preparar(n, mujer=mujer, tabla_benef=tabla_benef, agno_vector=agno_vector, agno_actual=agno_actual,
                   rv=rv, rp=rp, fsiniestro=fsiniestro, incluir=incluir)
-    modo_rv = rv is not None
-    modo_rp = rp is not None
     cnu = np.full(n, np.nan)
-    errores: dict[str, list[int]] = {"menor_20": [], "mayor_110": [], "vector": []}
+    errores: dict[str, list[int]] = {"menor_20": [], "mayor_110": [], "sin_tasa": [], "vector": []}
     for j in range(n):
         if not a["incluir"][j] or math.isnan(y[j]):
             continue
         edad = core.edad_entera(y[j])
-        rv_j = _opcional(a["rv"][j]) if modo_rv else None
-        rp_j = _opcional(a["rp"][j]) if modo_rp else None
+        rv_j, rp_j = _opcional(a["rv"][j]), _opcional(a["rp"][j])
         if edad < EDAD_MINIMA:
             errores["menor_20"].append(j)
         elif edad > EDAD_MAXIMA:
             errores["mayor_110"].append(j)
-        elif _sin_tasas(a, j, rv_j, rp_j, dir_vectores):
-            errores["vector"].append(j)
-        elif modo_rv and rv_j is None:
-            continue
+        elif (motivo := _motivo_sin_tasa(a, j, rv_j, rp_j, dir_vectores)) is not None:
+            errores[motivo].append(j)
         else:
             cnu[j] = core.cnu_sobrevivencia_conyuge(
                 edad, bool(a["mujer"][j]), a["tabla_benef"][j], _entero_o_nan(a["agno_vector"][j]),
@@ -259,6 +270,8 @@ def cnu_sobrevivencia_conyuge_vec(
     _advertir(errores, {
         "menor_20": "Los siguientes cónyuges tienen menos de 20 años",
         "mayor_110": "Los siguientes cónyuges tienen más de 110 años",
+        "sin_tasa": "Las siguientes observaciones quedan sin tasa: desde 2014 se requiere rp"
+                    " (o rv, agno_vector o fsiniestro anterior a 2014)",
         "vector": "Para las siguientes observaciones se intentó utilizar un vector inexistente",
     })
     return cnu

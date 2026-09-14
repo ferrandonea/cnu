@@ -9,6 +9,13 @@ def test_vectorial_coincide_con_escalar():
     v = cnu.cnu_afiliado_vec(edades, agno_vector=2013, agno_actual=2013)
     e = [cnu.cnu_afiliado(x, agno_vector=2013, agno_actual=2013) for x in edades]
     np.testing.assert_allclose(v, e)
+    # La tasa de cada fila se resuelve como en la escalar equivalente.
+    fechas = [20120601, 20250101, 20130101]
+    rp = [np.nan, 0.03, np.nan]
+    v = cnu.cnu_afiliado_vec(edades, fsiniestro=fechas, rp=rp, agno_actual=2025)
+    e = [cnu.cnu_afiliado(x, fsiniestro=f, rp=r if not np.isnan(r) else None, agno_actual=2025)
+         for x, f, r in zip(edades, fechas, rp)]
+    np.testing.assert_allclose(v, e)
 
 
 def test_argumentos_por_fila():
@@ -61,3 +68,36 @@ def test_fsiniestro_por_fila():
     esperado = [cnu.cnu_afiliado(65, tabla=t, rp=0.03, agno_actual=2024) for t in ("rv1985", "rv2009", "cb2014", "cb2020")]
     np.testing.assert_allclose(v, esperado)
     assert len(set(v)) == 4
+
+
+def test_regla_de_tasa_fila_a_fila():
+    fechas = [20120601, 20250101, 20250101]
+    with pytest.warns(cnu.AdvertenciaCNU, match=r"sin tasa: desde 2014 se requiere rp.*\(1\): 2") as w:
+        v = cnu.cnu_afiliado_vec([65, 65, 65], fsiniestro=fechas, rp=[np.nan, 0.03, np.nan], agno_actual=2025)
+    assert len(w) == 1
+    assert v[0] == pytest.approx(cnu.cnu_afiliado(65, fsiniestro=20120601, agno_actual=2025))
+    assert v[1] == pytest.approx(cnu.cnu_afiliado(65, fsiniestro=20250101, rp=0.03, agno_actual=2025))
+    assert np.isnan(v[2])
+
+
+def test_sin_tasa_ni_fecha_por_fila():
+    with pytest.warns(cnu.AdvertenciaCNU, match=r"sin tasa.*\(1\): 1"):
+        v = cnu.cnu_afiliado_vec([65, 65], rp=[0.03, np.nan], agno_actual=2025)
+    assert v[0] == pytest.approx(cnu.cnu_afiliado(65, rp=0.03, agno_actual=2025))
+    assert np.isnan(v[1])
+    with pytest.warns(cnu.AdvertenciaCNU, match="sin tasa"):
+        v = cnu.cnu_conyuge_vec([65, 65], [63, 63], rp=[np.nan, 0.03], agno_actual=2025)
+    assert np.isnan(v[0]) and not np.isnan(v[1])
+    with pytest.warns(cnu.AdvertenciaCNU, match="sin tasa"):
+        v = cnu.cnu_sobrevivencia_conyuge_vec([63, 63], rv=[0.03, np.nan], agno_actual=2025)
+    assert not np.isnan(v[0]) and np.isnan(v[1])
+
+
+def test_sin_tasa_y_vector_inexistente_se_distinguen():
+    with pytest.warns(cnu.AdvertenciaCNU) as w:
+        v = cnu.cnu_afiliado_vec([65, 65, 65], fsiniestro=[20250101, 20081231, 20130101], agno_actual=2025)
+    assert len(w) == 1
+    msg = str(w[0].message)
+    assert "(1) Las siguientes observaciones quedan sin tasa" in msg and "(1): 0\n" in msg
+    assert "(2) Para las siguientes observaciones se intentó utilizar un vector inexistente (1): 1" in msg
+    assert np.isnan(v[0]) and np.isnan(v[1]) and not np.isnan(v[2])
