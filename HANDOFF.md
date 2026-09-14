@@ -79,12 +79,6 @@ defecto a propósito: es un dato de entrada (`rp`).
 
 Fuente: https://www.spensiones.cl/apps/tasas/tasdescto.php
 
-## 4. Publicación hacia el repositorio original
-
-El repositorio es un fork de `gvegayon/cnu`. Los cambios de las versiones
-0.2.0 y 0.3.0 están en `origin/master` (fork); si se quieren devolver al
-original, corresponde abrir un PR contra `upstream/master`.
-
 ## Fuentes oficiales
 
 - SP, Compendio, Libro III, Anexo N° 7 (capitales necesarios) y Título X
