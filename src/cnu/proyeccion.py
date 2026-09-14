@@ -165,6 +165,10 @@ def proyectar_pension(
     """Proyecta saldo y pension de Retiro Programado desde la edad ``x`` (``cnu_proy_pensi``).
 
     :param saldo: saldo al momento del retiro (1 = resultados como fraccion del saldo).
+    :param tabla, tabla_benef: tablas del afiliado (sexo ``cot_mujer``) y del
+        conyuge (sexo ``cony_mujer``); por defecto ``"vigente"``, resueltas
+        una sola vez al inicio (``fsiniestro`` o el 31 de diciembre de
+        ``agno_actual``) como en :func:`proyectar_cnu`.
     :param rp: tasa de retiro programado; ``None`` usa el vector ``agno_vector``.
     :param faj: si ``True``, la pension incluye Factor de Ajuste (ver :mod:`cnu.faj`).
     :param edad_maxima, pcent, rp0, criter, maxiter: parametros del FAJ.

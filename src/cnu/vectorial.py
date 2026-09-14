@@ -5,6 +5,11 @@ de Stata: cada argumento puede ser un escalar (se aplica a todas las filas) o
 un arreglo de largo ``N``. Las filas que no se pueden calcular (edad fuera de
 [20, 110], vector de tasas inexistente, o excluidas con ``incluir``) quedan en
 ``nan`` y se emite un :class:`AdvertenciaCNU` con el detalle.
+
+Las tablas de mortalidad (``tabla``, ``tabla_benef``; por defecto
+``"vigente"``) se resuelven fila a fila segun el rol, el sexo y la fecha de
+cada observacion: ``fsiniestro`` si es distinto de 0 o, en su defecto, el 31
+de diciembre de su ``agno_actual`` (ver :func:`cnu.core.tabla_mortalidad`).
 """
 
 from __future__ import annotations
@@ -96,6 +101,8 @@ def cnu_afiliado_vec(
 
     Vease :func:`cnu.core.cnu_afiliado` para el significado de cada argumento.
     ``rv``/``rp`` aceptan ``nan`` por fila para indicar "no especificado".
+    ``tabla`` (por defecto ``"vigente"``) se resuelve por fila con el sexo
+    ``mujer`` y la fecha (``fsiniestro`` o fin de ``agno_actual``) de esa fila.
     """
     x = np.atleast_1d(np.asarray(x, dtype=float))
     n = len(x)
@@ -152,7 +159,9 @@ def cnu_conyuge_vec(
     """CNU de conyuge sin hijos para varias observaciones (equivale a ``cnu_cnyg_s_h``).
 
     Nota: igual que el comando vectorial de Stata, ``cony_mujer`` es ``False``
-    por defecto (el comando escalar usaba ``True``).
+    por defecto (el comando escalar usaba ``True``). ``tabla`` (rol afiliado,
+    sexo ``cot_mujer``) y ``tabla_benef`` (rol beneficiario, sexo
+    ``cony_mujer``), por defecto ``"vigente"``, se resuelven por fila.
     """
     x = np.atleast_1d(np.asarray(x, dtype=float))
     n = len(x)
@@ -214,7 +223,11 @@ def cnu_sobrevivencia_conyuge_vec(
     dir_vectores=None,
 ) -> np.ndarray:
     """CNU de sobrevivencia para conyuge sin hijos, varias observaciones
-    (equivale a ``cnu_sobr_cnyg_s_h``)."""
+    (equivale a ``cnu_sobr_cnyg_s_h``).
+
+    ``tabla_benef`` (rol beneficiario, sexo ``mujer``; por defecto
+    ``"vigente"``) se resuelve por fila con la fecha de esa fila.
+    """
     y = np.atleast_1d(np.asarray(y, dtype=float))
     n = len(y)
     a = _preparar(n, mujer=mujer, tabla_benef=tabla_benef, agno_vector=agno_vector, agno_actual=agno_actual,

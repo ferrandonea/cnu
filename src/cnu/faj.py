@@ -111,6 +111,12 @@ def faj_afiliado(
     Igual que el comando de Stata, la trayectoria del CNU se calcula siempre
     con el vector de tasas ``agno_vector``; ``rp`` (tasa unica, o ``None`` para
     usar el vector) solo interviene en la capitalizacion del saldo.
+
+    Las tablas ``tabla`` (afiliado, sexo ``cot_mujer``) y ``tabla_benef``
+    (beneficiario, sexo ``cony_mujer``), por defecto ``"vigente"``, se
+    resuelven una sola vez al inicio (``fsiniestro`` o el 31 de diciembre de
+    ``agno_actual``) y se usan en toda la trayectoria del CNU
+    (:func:`cnu.proyectar_cnu`).
     """
     from .proyeccion import proyectar_cnu  # importacion diferida (ciclo)
 
@@ -155,6 +161,9 @@ def faj_afiliado_vec(
     (o ``nan`` en la fila) se usa el vector ``agno_vector``: la tasa del
     periodo ``j`` del vector se aplica como tasa constante al CNU del periodo
     ``j`` (comportamiento heredado de ``cnu_faj_vec``).
+
+    Las tablas (por defecto ``"vigente"``) se resuelven por fila, con el rol,
+    el sexo y la fecha de cada observacion, al inicio de su trayectoria.
     """
     from .proyeccion import proyectar_cnu  # importacion diferida (ciclo)
     from .vectorial import AdvertenciaCNU, _preparar

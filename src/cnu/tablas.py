@@ -3,14 +3,22 @@
 Las tablas y vectores incluidos en el paquete viven en ``cnu/data`` como CSV:
 
 * ``cnu_tabmor_[tipo][agno][genero].csv`` (tipo: ``rv`` afiliado, ``b``
-  beneficiario, ``mi`` invalidez, ``cb`` combinada -solo hombres, desde 2014-;
-  genero: ``h``/``m``) con dos esquemas posibles de factores de mejoramiento:
+  beneficiario, ``mi`` invalidez, ``cb`` combinada -solo hombres, desde 2014,
+  para afiliados y beneficiarios-; genero: ``h``/``m``) con dos esquemas
+  posibles de factores de mejoramiento:
 
-  - historico: columnas ``edad, qx, aa`` (un factor por edad);
+  - historico (tablas 1985, 2004, 2006, 2009 y 2014): columnas
+    ``edad, qx, aa`` (un factor por edad);
   - bidimensional (TM2020): columnas ``edad, qx, aa2021, ..., aa2036`` (un
     factor por edad y agno calendario).
 
 * ``cnu_vec[agno].csv`` con columnas ``t, tasa`` (191 periodos).
+
+La tabla que corresponde a una persona depende de su rol (afiliado,
+beneficiario o invalido), su sexo y la fecha de vigencia; vease
+:func:`tabla_por_fecha` para las vigencias y :func:`resolver_tabla` para el
+nombre simbolico ``"vigente"`` (por defecto en todo el paquete) y la
+convencion de fin de agno cuando solo se conoce el agno de calculo.
 
 Tambien se pueden leer directorios externos (``dir_tablas`` / ``dir_vectores``)
 con archivos en formato CSV o en el formato binario original de Mata
@@ -126,9 +134,15 @@ def _cargar(nombre: str, directorio: str | Path | None, descripcion: str) -> tup
 class TablaMortalidad:
     """Tabla de mortalidad con factores de mejoramiento.
 
+    ``tipo`` es ``rv`` (afiliado), ``b`` (beneficiario), ``mi`` (invalido) o
+    ``cb`` (combinada: hombres afiliados y beneficiarios desde 2014); ``agno``
+    es el de la tabla y ``genero`` es ``h`` o ``m``. Se obtiene con
+    :func:`cargar_tabla_mortalidad` (tipo, agno y sexo explicitos) o con
+    :func:`cnu.tabla_mortalidad` (rol, sexo y fecha, incluido ``"vigente"``).
+
     ``qx[e]`` esta indexado por edad ``e`` (0..edad_maxima); las edades que la
     tabla no cubre quedan en ``nan``. Los factores de mejoramiento admiten dos
-    esquemas:
+    esquemas (ver :attr:`bidimensional` y :meth:`qx_mejorado`):
 
     * historico: ``aa[e]`` unidimensional y ``agnos_aa`` igual a ``None``;
     * bidimensional (TM2020): ``aa[e, j]`` es el factor de la edad ``e`` en el
@@ -467,7 +481,10 @@ def tabla_por_fecha(fecha: int, rol: str, genero: str) -> tuple[str, int]:
 
     ``rol`` es ``rv`` (afiliado), ``b`` (beneficiario) o ``mi`` (invalido) y
     ``genero`` es ``h`` o ``m``. Desde el 1 de julio de 2016 los hombres no
-    invalidos usan la tabla combinada ``cb`` (afiliados y beneficiarios):
+    invalidos usan la tabla combinada ``cb`` (afiliados y beneficiarios).
+    Es el selector que usa la tabla ``"vigente"`` (:func:`resolver_tabla`):
+    con la fecha del siniestro o, si no se conoce, con el 31 de diciembre del
+    agno de calculo (convencion de fin de agno).
 
     ======================  ========  ========  ========  ========  ========
     Fecha                   Afil. H   Afil. M   Benef. H  Benef. M  Invalido
