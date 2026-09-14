@@ -5,3 +5,14 @@
 
 *.log
 *.aux
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+*.egg-info/
+
+# Artefactos temporales de verificacion
+tmp/

@@ -1,0 +1,27 @@
+[project]
+name = "cnu"
+version = "0.1.0"
+description = "Calculador del Capital Necesario Unitario (CNU) del sistema de pensiones chileno (conversión a Python del módulo de Stata/Mata cnu)"
+readme = "README.md"
+authors = [
+    { name = "Francisco Javier Errandonea Terán", email = "ferrando@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26",
+]
+
+[project.scripts]
+cnu = "cnu:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.8,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
