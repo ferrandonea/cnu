@@ -103,3 +103,19 @@ def test_describir_muestra_tabla_resuelta():
     assert "tabla rv2020m" in d
     d = cnu.describir("conyuge sin hijos", "rv2009", "b2006", agno_actual=2013, fsiniestro=20130101)
     assert "tablas rv2009h b2006m" in d
+
+
+def test_constantes_articulo_58():
+    """Porcentajes del articulo 58 del D.L. N 3.500 y ajuste por pago mensual, como constantes publicas."""
+    assert cnu.FRACCION_CONYUGE == 0.6
+    assert cnu.FRACCION_CONYUGE_CON_HIJOS == 0.5
+    assert cnu.FRACCION_MADRE_PADRE == 0.36
+    assert cnu.FRACCION_MADRE_PADRE_CON_HIJOS == 0.30
+    assert cnu.FRACCION_HIJO == 0.15
+    assert cnu.FRACCION_HIJO_INVALIDO_PARCIAL == 0.11
+    assert cnu.FRACCION_PADRES == 0.5
+    assert cnu.AJUSTE_MENSUAL == 11 / 24
+    for nombre in ("FRACCION_CONYUGE", "FRACCION_CONYUGE_CON_HIJOS", "FRACCION_MADRE_PADRE",
+                   "FRACCION_MADRE_PADRE_CON_HIJOS", "FRACCION_HIJO", "FRACCION_HIJO_INVALIDO_PARCIAL",
+                   "FRACCION_PADRES", "AJUSTE_MENSUAL"):
+        assert nombre in cnu.__all__
