@@ -14,7 +14,7 @@ Funciones principales
   Factor de Ajuste (``cnu_faji``, ``cnu_faj``).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .core import (  # noqa: E402
     AGNO_VECTOR,

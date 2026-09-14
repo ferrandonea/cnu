@@ -1,6 +1,6 @@
 [project]
 name = "cnu"
-version = "0.1.0"
+version = "0.2.0"
 description = "Calculador del Capital Necesario Unitario (CNU) del sistema de pensiones chileno (conversión a Python del módulo de Stata/Mata cnu)"
 readme = "README.md"
 authors = [
