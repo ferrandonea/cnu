@@ -11,11 +11,14 @@ from . import __version__, core, faj as _faj, proyeccion, tablas
 
 def _opciones_comunes(p: argparse.ArgumentParser, benef: bool, afil: bool = True) -> None:
     if afil:
-        p.add_argument("--tabla", default=core.TABLA_AFILIADO, help="tabla del afiliado (p.ej. rv2009)")
+        p.add_argument("--tabla", default=core.TABLA_AFILIADO,
+                       help="tabla del afiliado (p.ej. rv2009, cb2020; por defecto: %(default)s)")
     if benef:
-        p.add_argument("--tabla-benef", default=core.TABLA_BENEFICIARIO, help="tabla del beneficiario (p.ej. b2006)")
+        p.add_argument("--tabla-benef", default=core.TABLA_BENEFICIARIO,
+                       help="tabla del beneficiario (p.ej. b2006, b2020; por defecto: %(default)s)")
     p.add_argument("--agno-vector", type=int, default=core.AGNO_VECTOR, help="año del vector de tasas")
-    p.add_argument("--agno-actual", type=int, default=None, help="año de cálculo (por defecto, el actual)")
+    p.add_argument("--agno-actual", type=int, default=None,
+                   help="año de cálculo (por defecto, el actual); la tabla vigente es la del 31 de diciembre")
     p.add_argument("--fsiniestro", type=int, default=0, help="fecha del siniestro YYYYMMDD (asigna la tabla)")
     p.add_argument("--dir-tablas", default=None, help="directorio con tablas de mortalidad propias")
     p.add_argument("--dir-vectores", default=None, help="directorio con vectores de tasas propios")

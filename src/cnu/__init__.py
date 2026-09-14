@@ -25,6 +25,7 @@ from .core import (  # noqa: E402
     ROL_INVALIDO,
     TABLA_AFILIADO,
     TABLA_BENEFICIARIO,
+    TABLA_VIGENTE,
     cnu_afiliado,
     cnu_conyuge,
     cnu_sobrevivencia_conyuge,
@@ -66,7 +67,7 @@ def main() -> None:
 
 __all__ = [
     "AGNO_VECTOR", "EDAD_MAXIMA", "EDAD_MINIMA", "ROL_AFILIADO", "ROL_BENEFICIARIO", "ROL_INVALIDO",
-    "TABLA_AFILIADO", "TABLA_BENEFICIARIO",
+    "TABLA_AFILIADO", "TABLA_BENEFICIARIO", "TABLA_VIGENTE",
     "AdvertenciaCNU", "ProyeccionPension", "TablaMortalidad",
     "agno_tabla_por_siniestro", "calcular_faj", "cargar_tabla_mortalidad", "cargar_vector_tasas",
     "cnu_afiliado", "cnu_afiliado_vec", "cnu_conyuge", "cnu_conyuge_vec",

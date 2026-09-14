@@ -8,7 +8,9 @@ def test_proyectar_cnu():
     c = cnu.proyectar_cnu(65, agno_actual=2014, rp=0.03)
     assert c.shape == (46,)
     assert c[0] == pytest.approx(cnu.cnu_afiliado(65, rp=0.03, agno_actual=2014))
-    assert c[5] == pytest.approx(cnu.cnu_afiliado(70, rp=0.03, agno_actual=2019))
+    # La tabla se fija al inicio de la proyeccion (vigente en 2014: rv2009) y se
+    # usa en toda la trayectoria, aunque en 2019 la vigente ya sea otra.
+    assert c[5] == pytest.approx(cnu.cnu_afiliado(70, rp=0.03, agno_actual=2019, tabla="rv2009"))
     assert np.all(np.diff(c) < 0)  # el CNU decrece con la edad
 
 
@@ -18,7 +20,7 @@ def test_proyectar_cnu_con_conyuge():
     assert c[0] == pytest.approx(esperado)
     # Cuando el conyuge pasa los 110 su aporte es 0.
     c2 = cnu.proyectar_cnu(65, 100, agno_actual=2014, rp=0.03)
-    assert c2[11] == pytest.approx(cnu.cnu_afiliado(76, rp=0.03, agno_actual=2025))
+    assert c2[11] == pytest.approx(cnu.cnu_afiliado(76, rp=0.03, agno_actual=2025, tabla="rv2009"))
 
 
 def test_proyectar_pension_sin_faj():

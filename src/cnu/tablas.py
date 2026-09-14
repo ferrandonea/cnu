@@ -20,6 +20,7 @@ con archivos en formato CSV o en el formato binario original de Mata
 from __future__ import annotations
 
 import csv
+import datetime
 import re
 import struct
 from dataclasses import dataclass
@@ -31,6 +32,8 @@ import numpy as np
 
 TIPOS_TABLA = ("rv", "mi", "b", "cb")
 TIPOS_SOLO_HOMBRES = ("cb",)
+# Nombre simbolico de tabla: se resuelve a la vigente segun rol, sexo y fecha.
+TABLA_VIGENTE = "vigente"
 GENEROS = ("h", "m")
 CABECERA_HISTORICA = ("edad", "qx", "aa")
 N_PERIODOS_VECTOR = 191
@@ -314,7 +317,15 @@ def cargar_tabla_mortalidad(
     validar_genero(genero)
     validar_tipo(tipo, genero)
     nombre = nombre_tabla(tipo, agno, genero)
-    matriz, cabecera = _cargar(nombre, directorio, "La tabla")
+    try:
+        matriz, cabecera = _cargar(nombre, directorio, "La tabla")
+    except FileNotFoundError:
+        if directorio is not None:
+            raise
+        raise FileNotFoundError(
+            f"La tabla {tipo}{int(agno)}{genero} (tipo '{tipo}', agno {int(agno)}, genero '{genero}') no existe "
+            "en el paquete; vea cnu.tablas_disponibles() para las combinaciones disponibles"
+        ) from None
     agnos_aa = agnos_desde_cabecera(cabecera) if cabecera is not None else None
     try:
         return TablaMortalidad.desde_matriz(tipo, int(agno), genero, matriz, agnos_aa)
@@ -494,17 +505,45 @@ def agno_tabla_por_siniestro(fsiniestro: int, tipo: str) -> int:
     return tabla_por_fecha(fsiniestro, tipo, "h")[1]
 
 
-def resolver_tabla(
-    tabla: str, fsiniestro: int = 0, rol: str | None = None, genero: str | None = None
-) -> tuple[str, int]:
-    """Devuelve ``(tipo, agno)`` para ``tabla`` (p.ej. ``"rv2009"``).
+def es_tabla_vigente(tabla: str) -> bool:
+    """``True`` si ``tabla`` es el nombre simbolico :data:`TABLA_VIGENTE`."""
+    return isinstance(tabla, str) and tabla.strip().lower() == TABLA_VIGENTE
 
-    Si ``fsiniestro`` es distinto de 0 la tabla se asigna dinamicamente segun
-    la normativa vigente a esa fecha con :func:`tabla_por_fecha`, usando el
-    ``rol`` (por defecto, el tipo del nombre) y el ``genero`` de la persona.
-    Sin ``genero`` solo se reasigna el agno y se conserva el tipo del nombre
-    (comportamiento del modulo de Stata).
+
+def fecha_fin_de_agno(agno: int) -> int:
+    """31 de diciembre de ``agno`` en formato ``YYYYMMDD`` (convencion de fin de agno)."""
+    return int(agno) * 10000 + 1231
+
+
+def resolver_tabla(
+    tabla: str,
+    fsiniestro: int = 0,
+    rol: str | None = None,
+    genero: str | None = None,
+    agno_actual: int | None = None,
+) -> tuple[str, int]:
+    """Devuelve ``(tipo, agno)`` para ``tabla`` (p.ej. ``"rv2009"`` o ``"vigente"``).
+
+    * Nombre explicito (``"rv2009"``, ``"cb2020"``, ...): se respeta tal cual.
+      Si ``fsiniestro`` es distinto de 0 la tabla se asigna dinamicamente
+      segun la normativa vigente a esa fecha con :func:`tabla_por_fecha`,
+      usando el ``rol`` (por defecto, el tipo del nombre) y el ``genero`` de
+      la persona. Sin ``genero`` solo se reasigna el agno y se conserva el
+      tipo del nombre (comportamiento del modulo de Stata).
+    * :data:`TABLA_VIGENTE` (``"vigente"``): requiere ``rol`` y ``genero``.
+      Con ``fsiniestro`` se usa la fecha del siniestro; sin ``fsiniestro`` se
+      aplica la convencion de fin de agno, el 31 de diciembre de
+      ``agno_actual`` (por defecto, el agno en curso). Asi 2016 y 2023
+      resuelven a la vigencia nueva (TM2014 y TM2020, respectivamente).
     """
+    if es_tabla_vigente(tabla):
+        if rol is None or genero is None:
+            raise ValueError("La tabla 'vigente' requiere el rol (rv, b o mi) y el genero (h o m) de la persona")
+        if not fsiniestro:
+            if agno_actual is None:
+                agno_actual = datetime.date.today().year
+            fsiniestro = fecha_fin_de_agno(agno_actual)
+        return tabla_por_fecha(fsiniestro, rol, genero)
     tipo, agno = parsear_nombre_tabla(tabla)
     if fsiniestro:
         rol = rol or tipo

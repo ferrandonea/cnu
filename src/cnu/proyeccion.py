@@ -28,6 +28,16 @@ def _por_fila(valor, n: int) -> list:
     return [None if math.isnan(v) else float(v) for v in arr[:n]]
 
 
+def _tablas_resueltas(y, cot_mujer, cony_mujer, tabla, tabla_benef, agno_actual, fsiniestro, dir_tablas):
+    """Nombres explicitos de las tablas del afiliado y del conyuge (si lo hay)."""
+    tabla = core.nombre_tabla_resuelta(tabla, core.ROL_AFILIADO, cot_mujer, fsiniestro, agno_actual, dir_tablas)
+    if y is not None and not core._es_missing(y):
+        tabla_benef = core.nombre_tabla_resuelta(
+            tabla_benef, core.ROL_BENEFICIARIO, cony_mujer, fsiniestro, agno_actual, dir_tablas
+        )
+    return tabla, tabla_benef
+
+
 def proyectar_cnu(
     x: int,
     y: int | None = None,
@@ -53,9 +63,16 @@ def proyectar_cnu(
     por periodo proyectado (como en Mata, la tasa ``j`` se usa como tasa
     constante para el CNU del periodo ``j``). Si ``rv`` se entrega, el CNU es
     de Renta Vitalicia.
+
+    Las tablas se resuelven una sola vez, al inicio de la proyeccion
+    (``fsiniestro`` o, con ``"vigente"``, el 31 de diciembre de
+    ``agno_actual``), y se usan en toda la trayectoria.
     """
     x = int(x)
     agno_actual = core._agno(agno_actual)
+    tabla, tabla_benef = _tablas_resueltas(
+        y, cot_mujer, cony_mujer, tabla, tabla_benef, agno_actual, fsiniestro, dir_tablas
+    )
     n = EDAD_MAXIMA - x + 1
     xs = range(x, EDAD_MAXIMA + 1)
     agnos = range(agno_actual, agno_actual + n)
@@ -154,6 +171,9 @@ def proyectar_pension(
     """
     x = int(x)
     agno_actual = core._agno(agno_actual)
+    tabla, tabla_benef = _tablas_resueltas(
+        y, cot_mujer, cony_mujer, tabla, tabla_benef, agno_actual, fsiniestro, dir_tablas
+    )
     if saldo == 0:
         saldo = 1.0
     n = EDAD_MAXIMA - x + 1
