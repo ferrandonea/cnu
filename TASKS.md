@@ -11,8 +11,8 @@ Repo: `ferrandonea/cnu` (fork; `upstream` = `gvegayon/cnu`). Tests: `UV_CACHE_DI
 - [x] #4 Mejoramiento bidimensional TM2020 y CNU con tabla 2020 explícita — completado
 - [x] #5 Selección de tabla por fecha de siniestro con todas las vigencias (1985–2020) — completado
 - [x] #6 Default `"vigente"` con convención de fin de año en CNU, FAJ, proyecciones, vectoriales y CLI — completado
-- [ ] #7 README y docstrings: tablas 2014/2020, vigencias y default vigente — pendiente (bloqueado por #6, ya completado)
+- [x] #7 README y docstrings: tablas 2014/2020, vigencias y default vigente — completado
 
-Frontera actual: #7 (bloqueado solo por #6, ya completado).
+Frontera actual: ninguna; todas las tareas del PRD #1 estan completadas (listo para `/close-prd 1`).
 
 Este archivo es efímero: se elimina con `/close-prd 1`.
