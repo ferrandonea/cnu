@@ -35,9 +35,9 @@ import cnu
 cnu.cnu_afiliado(65, rp=0.03, agno_actual=2026)                   # 15.456439
 cnu.cnu_afiliado(60, mujer=True, rp=0.03, agno_actual=2026)       # 19.764704  (rv2020m)
 
-# Renta vitalicia, o vector de tasas de RP (2013 por defecto)
+# Renta vitalicia, o vector de tasas de RP explícito
 cnu.cnu_afiliado(67, rv=0.032, agno_actual=2026)
-cnu.cnu_afiliado(65, agno_actual=2026)                            # 14.042741  (vector 2013)
+cnu.cnu_afiliado(65, agno_vector=2013, agno_actual=2026)          # 14.042741  (vector 2013)
 
 # CNU del cónyuge (se suma al del afiliado para obtener el CNU total)
 cnu.cnu_conyuge(65, 63, cony_mujer=True, rp=0.03, agno_actual=2026)   # 2.493278  (cb2020h, b2020m)
@@ -46,8 +46,8 @@ cnu.cnu_conyuge(65, 63, cony_mujer=True, rp=0.03, agno_actual=2026)   # 2.493278
 cnu.cnu_sobrevivencia_conyuge(63, mujer=True, rp=0.03, agno_actual=2026)  # 10.674379  (b2020m)
 
 # Factor de ajuste
-cnu.faj_afiliado(65, rp=0.03, agno_actual=2026)                   # 0.037205
-cnu.faj_afiliado(65, 62, rp=0.03, agno_actual=2026)               # 0.004659
+cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2026)      # 0.037205
+cnu.faj_afiliado(65, 62, rp=0.03, agno_vector=2013, agno_actual=2026)  # 0.004659
 
 # Proyección de pensión en retiro programado (con o sin FAJ)
 p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, faj=True, agno_actual=2026)
@@ -58,12 +58,19 @@ p.to_dataframe()        # requiere pandas
 cnu.cnu_afiliado(65, fsiniestro=20230630, rp=0.03, agno_actual=2023)   # 15.063535  (cb2014h)
 cnu.cnu_afiliado(65, fsiniestro=20230701, rp=0.03, agno_actual=2023)   # 15.320124  (cb2020h)
 
-# Qué tabla se usó
-cnu.describir("soltero sin hijos", "vigente", agno_actual=2026)
-# 'CNU RP para soltero sin hijos (tabla cb2020h), vector 2013 en el año 2026'
+# Qué tabla y qué tasa se usaron
+cnu.describir("soltero sin hijos", "vigente", rp=0.03, agno_actual=2026)
+# 'CNU RP para soltero sin hijos (tabla cb2020h), tasa 3% en el año 2026'
 ```
 
 Si `agno_actual` no se entrega se usa el año del sistema.
+
+La tasa de descuento debe ser explícita: `rv` (renta vitalicia), `rp` (tasa
+única de retiro programado, la TITRP que publica la SP desde 2014) o
+`agno_vector` (vector de tasas de ese año). Sin ninguna de ellas, solo un
+`fsiniestro` anterior al 1 de enero de 2014 (`cnu.INICIO_TITRP`) usa el vector
+del año del siniestro; en cualquier otro caso el cálculo falla con un
+`ValueError` que lo explica.
 
 ### Ejemplos históricos
 
@@ -76,8 +83,9 @@ cnu.cnu_afiliado(65, agno_vector=2013, agno_actual=2013)        # 13.016877
 cnu.cnu_afiliado(65, tabla="rv2009", agno_vector=2013, agno_actual=2013)   # idem
 cnu.cnu_afiliado(65, rp=0.0366, agno_actual=2014)               # 13.377535
 cnu.cnu_conyuge(65, 63, cony_mujer=True, agno_vector=2011, agno_actual=2011)  # 2.231859
-cnu.faj_afiliado(65, rp=0.03, agno_actual=2014)                 # 0.066178
-cnu.faj_afiliado(65, 62, rp=0.03, agno_actual=2014)             # 0.013094
+cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2014)      # 0.066178
+cnu.faj_afiliado(65, 62, rp=0.03, agno_vector=2013, agno_actual=2014)  # 0.013094
+cnu.cnu_afiliado(65, fsiniestro=20130101, agno_actual=2013)     # 13.016877  (vector 2013 por el siniestro)
 ```
 
 Una tabla explícita se respeta aunque no sea la vigente:
@@ -94,8 +102,8 @@ tabla `"vigente"` se resuelve fila a fila con el sexo, el `agno_actual` y el
 ```python
 import numpy as np
 edades = np.array([55, 65, 75])
-cnu.cnu_afiliado_vec(edades, mujer=[0, 1, 0], agno_actual=2026)
-cnu.cnu_afiliado_vec(edades, fsiniestro=[20130101, 20200101, 20240101])   # rv2009, cb2014, cb2020
+cnu.cnu_afiliado_vec(edades, mujer=[0, 1, 0], rp=0.03, agno_actual=2026)
+cnu.cnu_afiliado_vec(edades, fsiniestro=[20130101, 20200101, 20240101], rp=0.03)   # rv2009, cb2014, cb2020
 cnu.cnu_conyuge_vec(edades, [53, 63, 73], cony_mujer=True, rp=[0.03, np.nan, 0.03])
 cnu.faj_afiliado_vec(edades, rp=0.03)
 ```
@@ -110,10 +118,10 @@ en `nan` y se emite una advertencia `cnu.AdvertenciaCNU` con los índices.
 | `tabla` | Tabla de mortalidad del afiliado: `"vigente"` (por defecto) o un nombre explícito como `"rv2009"`, `"cb2020"`. |
 | `tabla_benef` | Tabla del beneficiario: `"vigente"` (por defecto) o un nombre explícito como `"b2006"`, `"b2020"`. |
 | `mujer`, `cot_mujer`, `cony_mujer` | Sexo del afiliado o cónyuge; determina la tabla (`cb` para hombres desde 2016). |
-| `agno_vector` | Año del vector de tasas para Retiro Programado (2013 por defecto). |
+| `agno_vector` | Año del vector de tasas para Retiro Programado. Sin él, solo un `fsiniestro` anterior a 2014 usa por defecto el vector de su año. |
 | `agno_actual` | Año de cálculo; ajusta las tablas por mejoramiento y, sin `fsiniestro`, fija la tabla vigente al 31 de diciembre de ese año (por defecto, el año actual). |
 | `rv` | Tasa de renta vitalicia. Si se entrega, el CNU es de RV. |
-| `rp` | Tasa única de retiro programado. Si no se entrega, se usa el vector. |
+| `rp` | Tasa única de retiro programado (TITRP). Obligatoria desde 2014 si no se entrega `rv` ni `agno_vector`. |
 | `fsiniestro` | Fecha del siniestro `YYYYMMDD`; asigna la tabla vigente a esa fecha. |
 | `pasos` | Imprime el cálculo periodo a periodo, indicando la tabla resuelta. |
 | `dir_tablas`, `dir_vectores` | Directorios con tablas o vectores propios. |
@@ -127,11 +135,11 @@ La primera línea de la salida indica la tabla efectivamente usada.
 ```
 cnu afil 65 --rp 0.03 --agno-actual 2026
 cnu afil 65 --fsiniestro 20240315 --rp 0.03
-cnu afil 65 --mujer --pasos
-cnu afil 65 --tabla rv2009 --agno-actual 2013
+cnu afil 65 --mujer --rp 0.03 --pasos
+cnu afil 65 --tabla rv2009 --agno-vector 2013 --agno-actual 2013
 cnu conyuge 65 63 --rp 0.03 --agno-actual 2026
 cnu sobrev 63 --mujer --rp 0.03
-cnu faj 65 62 --rp 0.03
+cnu faj 65 62 --rp 0.03 --agno-vector 2013
 cnu proy 65 --faj --csv > trayectoria.csv
 cnu tablas
 ```
@@ -241,7 +249,7 @@ cnu.guardar_tabla_mortalidad(t.como_matriz(), 2020, "h", "cb", "mis_tablas",
                              reemplazar=True, agnos_aa=range(2021, 2037))            # matriz cruda
 cnu.guardar_tabla_mortalidad(cnu.cargar_tabla_mortalidad("rv", 2009, "h"), 2009, "h", "rv",
                              "mis_tablas", formato="mata")                           # histórica, binario Mata
-cnu.cnu_afiliado(65, agno_actual=2026, dir_tablas="mis_tablas")
+cnu.cnu_afiliado(65, rp=0.03, agno_actual=2026, dir_tablas="mis_tablas")
 ```
 
 `guardar_vector_tasas`, `leer_matriz_mata` y `escribir_matriz_mata` permiten

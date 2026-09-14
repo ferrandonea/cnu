@@ -176,7 +176,7 @@ def faj_afiliado_vec(
         xi = core.edad_entera(x[i])
         if xi < EDAD_MINIMA or xi > EDAD_MAXIMA:
             continue
-        agno_vec = int(a["agno_vector"][i])
+        agno_vec = None if math.isnan(a["agno_vector"][i]) else int(a["agno_vector"][i])
         rp_a = core.tasas_por_periodo(
             agno_vec, None, a["rp"][i], dir_vectores, int(a["fsiniestro"][i]), estricto=False
         )

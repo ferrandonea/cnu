@@ -4,11 +4,16 @@ Equivalentes a las rutinas Mata ``cnu_2_1`` (afiliado), ``cnu_2_2`` (conyuge
 sin hijos) y ``cnu_1_1`` (sobrevivencia para conyuge sin hijos), segun el
 Anexo N 7 del Compendio de Normas de la Superintendencia de Pensiones.
 
-Seleccion de la tasa de descuento (misma regla que el modulo de Stata):
+Seleccion de la tasa de descuento (ver :func:`tasas_por_periodo`):
 
-* ``rv`` dado  -> Renta Vitalicia con tasa constante ``rv``.
-* ``rp`` dado  -> Retiro Programado con tasa constante ``rp``.
-* ninguno      -> Retiro Programado con el vector de tasas ``agno_vector``.
+* ``rv`` dado -> Renta Vitalicia con tasa constante ``rv``.
+* ``rp`` dado -> Retiro Programado con tasa constante ``rp`` (la TITRP).
+* ``agno_vector`` dado -> Retiro Programado con el vector de tasas de ese agno.
+* ninguno y siniestro anterior al 1 de enero de 2014 -> vector del agno del
+  siniestro.
+* ninguno en cualquier otro caso -> error: desde 2014 rige la tasa unica
+  trimestral de retiro programado (TITRP) que publica la SP y debe entregarse
+  en ``rp``.
 """
 
 from __future__ import annotations
@@ -38,7 +43,20 @@ FRACCION_CONYUGE = 0.6
 # (fecha del siniestro o, en su defecto, el 31 de diciembre de ``agno_actual``).
 TABLA_AFILIADO = TABLA_VIGENTE
 TABLA_BENEFICIARIO = TABLA_VIGENTE
-AGNO_VECTOR = 2013
+
+# Sin tasa explicita no hay vector de tasas por defecto: desde el 1 de enero
+# de 2014 rige la tasa unica trimestral de retiro programado (TITRP) que
+# publica la Superintendencia de Pensiones y debe entregarse en ``rp``. Solo
+# los siniestros anteriores a esa fecha usan por defecto el vector de su agno.
+AGNO_VECTOR = None
+INICIO_TITRP = 20140101
+
+MENSAJE_SIN_TASA = (
+    "No se entrego tasa de descuento (rv, rp o agno_vector). Desde el 1 de enero de 2014 "
+    "rige una tasa unica trimestral de retiro programado (TITRP) publicada por la "
+    "Superintendencia de Pensiones, que debe entregarse en rp; el vector de tasas del agno "
+    "del siniestro solo se usa por defecto para siniestros anteriores a esa fecha (fsiniestro)."
+)
 
 # Roles de la persona cuya mortalidad se modela; coinciden con el tipo de
 # tabla historico (rv afiliado, b beneficiario, mi invalido).
@@ -55,8 +73,29 @@ def _agno(agno_actual: int | None) -> int:
     return agno_actual_por_defecto() if agno_actual is None else int(agno_actual)
 
 
+def _agno_vector_explicito(agno_vector) -> bool:
+    return agno_vector is not None and not _es_missing(agno_vector)
+
+
+def agno_vector_efectivo(agno_vector: int | None = AGNO_VECTOR, fsiniestro: int = 0) -> int:
+    """Agno del vector de tasas que rige cuando no hay tasa constante.
+
+    * ``agno_vector`` explicito -> ese agno;
+    * sin ``agno_vector`` y ``fsiniestro`` anterior a :data:`INICIO_TITRP`
+      (1 de enero de 2014) -> el agno del siniestro;
+    * en cualquier otro caso -> ``ValueError``: desde 2014 rige la TITRP y la
+      tasa debe entregarse en ``rp``.
+    """
+    if _agno_vector_explicito(agno_vector):
+        return int(agno_vector)
+    fsiniestro = 0 if fsiniestro is None or _es_missing(fsiniestro) else int(fsiniestro)
+    if 0 < fsiniestro < INICIO_TITRP:
+        return fsiniestro // 10000
+    raise ValueError(MENSAJE_SIN_TASA)
+
+
 def tasas_por_periodo(
-    agno_vector: int = AGNO_VECTOR,
+    agno_vector: int | None = AGNO_VECTOR,
     rv: float | None = None,
     rp: float | None = None,
     dir_vectores=None,
@@ -70,23 +109,41 @@ def tasas_por_periodo(
     proyecciones y la CLI, con la regla:
 
     * ``rv`` dado (no ``nan``) -> tasa constante ``rv`` (Renta Vitalicia);
-    * ``rp`` dado (no ``nan``) -> tasa constante ``rp`` (Retiro Programado);
-    * ninguno -> vector de tasas ``agno_vector`` (Retiro Programado).
+    * ``rp`` dado (no ``nan``) -> tasa constante ``rp`` (Retiro Programado,
+      la TITRP);
+    * ``agno_vector`` dado -> vector de tasas de ese agno (error si no existe);
+    * ninguno y ``fsiniestro`` anterior a :data:`INICIO_TITRP` -> vector del
+      agno del siniestro (error que nombra el agno si no esta incluido ni en
+      ``dir_vectores``);
+    * ninguno en cualquier otro caso -> ``ValueError`` que explica que desde
+      enero de 2014 rige la TITRP y debe entregarse en ``rp``.
 
-    :param fsiniestro: fecha del siniestro ``YYYYMMDD`` (0 si no se conoce);
-        por ahora no interviene en la seleccion.
+    :param fsiniestro: fecha del siniestro ``YYYYMMDD`` (0 si no se conoce).
     :param estricto: si es ``False`` devuelve ``None`` en vez de lanzar un
-        error cuando no es posible resolver las tasas (vector inexistente).
+        error cuando no es posible resolver las tasas (sin tasa o vector
+        inexistente).
     """
     if rv is not None and not _es_missing(rv):
         return np.full(N_PERIODOS_VECTOR, float(rv))
     if rp is not None and not _es_missing(rp):
         return np.full(N_PERIODOS_VECTOR, float(rp))
-    if estricto:
-        return cargar_vector_tasas(int(agno_vector), dir_vectores)
-    if not existe_vector_tasas(agno_vector, dir_vectores):
-        return None
-    return cargar_vector_tasas(int(agno_vector), dir_vectores)
+    if not estricto:
+        try:
+            agno = agno_vector_efectivo(agno_vector, fsiniestro)
+        except ValueError:
+            return None
+        return cargar_vector_tasas(agno, dir_vectores) if existe_vector_tasas(agno, dir_vectores) else None
+    agno = agno_vector_efectivo(agno_vector, fsiniestro)
+    if _agno_vector_explicito(agno_vector):
+        return cargar_vector_tasas(agno, dir_vectores)
+    try:
+        return cargar_vector_tasas(agno, dir_vectores)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"El vector de tasas del agno {agno} (cnu_vec{agno}), que corresponde al siniestro "
+            f"{int(fsiniestro)}, no esta incluido en el paquete ni en dir_vectores; entregue rp, "
+            "agno_vector o dir_vectores"
+        ) from e
 
 
 def edad_entera(edad) -> int:
@@ -172,7 +229,7 @@ def cnu_afiliado(
     x: int,
     mujer: bool = False,
     tabla: str = TABLA_AFILIADO,
-    agno_vector: int = AGNO_VECTOR,
+    agno_vector: int | None = AGNO_VECTOR,
     agno_actual: int | None = None,
     rv: float | None = None,
     rp: float | None = None,
@@ -187,14 +244,18 @@ def cnu_afiliado(
     :param mujer: ``True`` si el afiliado es mujer.
     :param tabla: tabla de mortalidad del afiliado, p.ej. ``"rv2009"``; por
         defecto ``"vigente"`` (ver :func:`tabla_mortalidad`).
-    :param agno_vector: agno del vector de tasas (retiro programado).
+    :param agno_vector: agno del vector de tasas (retiro programado); sin
+        el, solo los siniestros anteriores a 2014 usan el vector de su agno.
     :param agno_actual: agno de calculo (por defecto, el del sistema); con
         ``"vigente"`` y sin ``fsiniestro`` la tabla es la vigente al 31 de
         diciembre de este agno.
     :param rv: tasa de renta vitalicia; si se entrega, el CNU es de RV.
-    :param rp: tasa unica de retiro programado (reemplaza al vector).
+    :param rp: tasa unica de retiro programado (TITRP); obligatoria desde
+        2014 si no se entrega ``rv`` ni ``agno_vector`` (ver
+        :func:`tasas_por_periodo`).
     :param fsiniestro: fecha del siniestro ``YYYYMMDD``; si es distinta de 0,
-        el agno de la tabla se asigna dinamicamente.
+        el agno de la tabla se asigna dinamicamente y, sin tasa, un siniestro
+        anterior a 2014 usa el vector de tasas de su agno.
     :param pasos: imprime el calculo periodo a periodo.
     """
     x = edad_entera(x)
@@ -225,7 +286,7 @@ def cnu_conyuge(
     cony_mujer: bool = True,
     tabla: str = TABLA_AFILIADO,
     tabla_benef: str = TABLA_BENEFICIARIO,
-    agno_vector: int = AGNO_VECTOR,
+    agno_vector: int | None = AGNO_VECTOR,
     agno_actual: int | None = None,
     rv: float | None = None,
     rp: float | None = None,
@@ -245,6 +306,9 @@ def cnu_conyuge(
     :param cony_mujer: ``True`` si el conyuge es mujer.
     :param tabla: tabla del afiliado (p.ej. ``"rv2009"``; por defecto ``"vigente"``).
     :param tabla_benef: tabla del beneficiario (p.ej. ``"b2006"``; por defecto ``"vigente"``).
+
+    La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
+    como en :func:`cnu_afiliado`.
     """
     x, y = edad_entera(x), edad_entera(y)
     agno_actual = _agno(agno_actual)
@@ -275,7 +339,7 @@ def cnu_sobrevivencia_conyuge(
     y: int,
     mujer: bool = False,
     tabla_benef: str = TABLA_BENEFICIARIO,
-    agno_vector: int = AGNO_VECTOR,
+    agno_vector: int | None = AGNO_VECTOR,
     agno_actual: int | None = None,
     rv: float | None = None,
     rp: float | None = None,
@@ -292,6 +356,9 @@ def cnu_sobrevivencia_conyuge(
     :param mujer: ``True`` si el conyuge es mujer.
     :param tabla_benef: tabla de mortalidad del beneficiario (p.ej. ``"b2006"``;
         por defecto ``"vigente"``).
+
+    La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
+    como en :func:`cnu_afiliado`.
     """
     y = edad_entera(y)
     agno_actual = _agno(agno_actual)
@@ -318,7 +385,7 @@ def describir(
     tipo_cnu: str,
     tabla: str | None = None,
     tabla_benef: str | None = None,
-    agno_vector: int = AGNO_VECTOR,
+    agno_vector: int | None = AGNO_VECTOR,
     agno_actual: int | None = None,
     rv: float | None = None,
     rp: float | None = None,
@@ -331,7 +398,10 @@ def describir(
 
     ``tabla`` es la del afiliado (sexo ``mujer``) y ``tabla_benef`` la del
     beneficiario (sexo ``benef_mujer``). Se muestran las tablas efectivamente
-    resueltas (tipo, agno y sexo), p.ej. ``cb2020h`` con ``fsiniestro`` de 2024.
+    resueltas (tipo, agno y sexo), p.ej. ``cb2020h`` con ``fsiniestro`` de
+    2024, y la tasa efectiva (``tasa 3.45%`` o ``vector 2013``, segun
+    :func:`agno_vector_efectivo`); sin tasa determinable lanza el mismo
+    ``ValueError`` que el calculo.
     """
     agno_actual = _agno(agno_actual)
     tablas = []
@@ -344,4 +414,5 @@ def describir(
         return f"CNU RV para {tipo_cnu} ({etiqueta_tablas}), tasa {rv * 100:g}% en el año {agno_actual}"
     if rp is not None:
         return f"CNU RP para {tipo_cnu} ({etiqueta_tablas}), tasa {rp * 100:g}% en el año {agno_actual}"
+    agno_vector = agno_vector_efectivo(agno_vector, fsiniestro)
     return f"CNU RP para {tipo_cnu} ({etiqueta_tablas}), vector {agno_vector} en el año {agno_actual}"

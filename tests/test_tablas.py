@@ -61,7 +61,7 @@ def test_guardar_y_cargar_en_directorio(tmp_path):
     cnu.guardar_vector_tasas(v, 2013, tmp_path)
     np.testing.assert_array_equal(cnu.cargar_vector_tasas(2013, str(tmp_path)), v)
     # El mismo calculo con las tablas propias da el mismo resultado.
-    assert cnu.cnu_afiliado(65, agno_actual=2013, dir_tablas=str(tmp_path), dir_vectores=str(tmp_path)) == pytest.approx(13.016880)
+    assert cnu.cnu_afiliado(65, agno_vector=2013, agno_actual=2013, dir_tablas=str(tmp_path), dir_vectores=str(tmp_path)) == pytest.approx(13.016880)
 
 
 def test_directorio_inexistente():

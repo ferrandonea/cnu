@@ -128,7 +128,7 @@ def cnu_afiliado_vec(
             continue  # RV con tasa faltante en esta fila -> nan
         else:
             cnu[j] = core.cnu_afiliado(
-                edad, bool(a["mujer"][j]), a["tabla"][j], int(a["agno_vector"][j]),
+                edad, bool(a["mujer"][j]), a["tabla"][j], _entero_o_nan(a["agno_vector"][j]),
                 _entero_o_nan(a["agno_actual"][j]), rv_j, rp_j, int(a["fsiniestro"][j]),
                 False, dir_tablas, dir_vectores,
             )
@@ -196,7 +196,7 @@ def cnu_conyuge_vec(
         else:
             cnu[j] = core.cnu_conyuge(
                 ex, ey, bool(a["cot_mujer"][j]), bool(a["cony_mujer"][j]), a["tabla"][j], a["tabla_benef"][j],
-                int(a["agno_vector"][j]), _entero_o_nan(a["agno_actual"][j]), rv_j, rp_j,
+                _entero_o_nan(a["agno_vector"][j]), _entero_o_nan(a["agno_actual"][j]), rv_j, rp_j,
                 int(a["fsiniestro"][j]), False, dir_tablas, dir_vectores,
             )
     _advertir(errores, {
@@ -252,7 +252,7 @@ def cnu_sobrevivencia_conyuge_vec(
             continue
         else:
             cnu[j] = core.cnu_sobrevivencia_conyuge(
-                edad, bool(a["mujer"][j]), a["tabla_benef"][j], int(a["agno_vector"][j]),
+                edad, bool(a["mujer"][j]), a["tabla_benef"][j], _entero_o_nan(a["agno_vector"][j]),
                 _entero_o_nan(a["agno_actual"][j]), rv_j, rp_j, int(a["fsiniestro"][j]),
                 False, dir_tablas, dir_vectores,
             )

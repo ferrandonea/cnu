@@ -4,14 +4,14 @@ from cnu.cli import main
 
 
 def test_afil(capsys):
-    assert main(["afil", "65", "--agno-actual", "2013"]) == 0
+    assert main(["afil", "65", "--agno-vector", "2013", "--agno-actual", "2013"]) == 0
     out = capsys.readouterr().out
     assert "13.016877" in out
     assert "vector 2013" in out
 
 
 def test_afil_tabla_2020(capsys):
-    assert main(["afil", "65", "--tabla", "cb2020", "--agno-actual", "2024"]) == 0
+    assert main(["afil", "65", "--tabla", "cb2020", "--rp", "0.03", "--agno-actual", "2024"]) == 0
     out = capsys.readouterr().out
     assert "tabla cb2020" in out
     assert float(out.strip().splitlines()[-1]) > 0
@@ -23,7 +23,7 @@ def test_conyuge(capsys):
 
 
 def test_faj(capsys):
-    main(["faj", "65", "--rp", "0.03", "--agno-actual", "2014"])
+    main(["faj", "65", "--rp", "0.03", "--agno-vector", "2013", "--agno-actual", "2014"])
     assert "0.066178" in capsys.readouterr().out
 
 
@@ -45,19 +45,19 @@ def test_tablas(capsys):
 
 
 def test_pasos(capsys):
-    main(["afil", "65", "--pasos", "--agno-actual", "2013"])
+    main(["afil", "65", "--pasos", "--agno-vector", "2013", "--agno-actual", "2013"])
     out = capsys.readouterr().out
     assert "t =   1:" in out
     assert "tabla rv2009h" in out
 
 
 def test_fsiniestro_muestra_tabla_resuelta(capsys):
-    assert main(["afil", "65", "--fsiniestro", "20240101", "--agno-actual", "2024"]) == 0
+    assert main(["afil", "65", "--fsiniestro", "20240101", "--rp", "0.03", "--agno-actual", "2024"]) == 0
     out = capsys.readouterr().out
     assert "tabla cb2020h" in out
-    main(["afil", "65", "--mujer", "--fsiniestro", "20240101", "--agno-actual", "2024"])
+    main(["afil", "65", "--mujer", "--fsiniestro", "20240101", "--rp", "0.03", "--agno-actual", "2024"])
     assert "tabla rv2020m" in capsys.readouterr().out
-    main(["conyuge", "65", "62", "--pasos", "--fsiniestro", "20240101", "--agno-actual", "2024"])
+    main(["conyuge", "65", "62", "--pasos", "--fsiniestro", "20240101", "--rp", "0.03", "--agno-actual", "2024"])
     out = capsys.readouterr().out
     assert "tablas cb2020h b2020m" in out
     assert out.count("tablas cb2020h b2020m") == 2  # pasos y descripcion

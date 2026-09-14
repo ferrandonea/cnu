@@ -21,7 +21,7 @@ def test_argumentos_por_fila():
 
 def test_filas_invalidas_dan_nan_y_advierten():
     with pytest.warns(cnu.AdvertenciaCNU, match="menos de 20"):
-        v = cnu.cnu_afiliado_vec([19, 65, 111, 70], agno_actual=2013, incluir=[True, True, True, False])
+        v = cnu.cnu_afiliado_vec([19, 65, 111, 70], agno_vector=2013, agno_actual=2013, incluir=[True, True, True, False])
     assert np.isnan(v[0]) and np.isnan(v[2]) and np.isnan(v[3])
     assert not np.isnan(v[1])
 
@@ -39,7 +39,7 @@ def test_conyuge_vec():
     v = cnu.cnu_conyuge_vec([65], [63], cony_mujer=True, agno_vector=2011, agno_actual=2011)
     assert v[0] == pytest.approx(2.231859)
     with pytest.warns(cnu.AdvertenciaCNU, match="cónyuges tienen más de 110"):
-        v = cnu.cnu_conyuge_vec([65, 65], [63, 111], agno_actual=2011)
+        v = cnu.cnu_conyuge_vec([65, 65], [63, 111], agno_vector=2011, agno_actual=2011)
     assert np.isnan(v[1])
 
 
@@ -50,14 +50,14 @@ def test_sobrevivencia_vec():
 
 
 def test_sobrevivencia_es_positiva_y_menor_que_afiliado():
-    s = cnu.cnu_sobrevivencia_conyuge(65, agno_actual=2013)
-    a = cnu.cnu_afiliado(65, agno_actual=2013)
+    s = cnu.cnu_sobrevivencia_conyuge(65, agno_vector=2013, agno_actual=2013)
+    a = cnu.cnu_afiliado(65, agno_vector=2013, agno_actual=2013)
     assert 0 < s < a
 
 
 def test_fsiniestro_por_fila():
     fechas = [20040101, 20130101, 20200101, 20240101]
-    v = cnu.cnu_afiliado_vec([65, 65, 65, 65], fsiniestro=fechas, agno_actual=2024)
-    esperado = [cnu.cnu_afiliado(65, tabla=t, agno_actual=2024) for t in ("rv1985", "rv2009", "cb2014", "cb2020")]
+    v = cnu.cnu_afiliado_vec([65, 65, 65, 65], fsiniestro=fechas, rp=0.03, agno_actual=2024)
+    esperado = [cnu.cnu_afiliado(65, tabla=t, rp=0.03, agno_actual=2024) for t in ("rv1985", "rv2009", "cb2014", "cb2020")]
     np.testing.assert_allclose(v, esperado)
     assert len(set(v)) == 4

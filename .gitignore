@@ -16,3 +16,6 @@ dist/
 
 # Artefactos temporales de verificacion
 tmp/
+
+# Seguimiento efimero de PRD
+TASKS.md
