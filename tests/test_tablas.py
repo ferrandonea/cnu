@@ -164,9 +164,10 @@ def test_desde_matriz_exige_agnos():
     assert t.bidimensional and t.agnos_aa == (2021, 2022)
     assert t.aa[66, 1] == pytest.approx(0.031)
     np.testing.assert_array_equal(t.como_matriz(), m)
-    # El mejoramiento bidimensional llega en el issue #4.
-    with pytest.raises(NotImplementedError):
-        t.qx_mejorado(2024, 65)
+    # Mejoramiento bidimensional: 65 en 2024 acumula 2021..2022 y repite el ultimo factor.
+    q = t.qx_mejorado(2024, 65)
+    assert q[65] == pytest.approx(0.01 * (1 - 0.02) * (1 - 0.03) ** 3)
+    assert q[66] == pytest.approx(0.011 * (1 - 0.021) * (1 - 0.031) ** 4)
 
 
 def test_binario_mata_bidimensional_exige_agnos(tmp_path):
@@ -189,3 +190,37 @@ def test_listado_incluye_2014_y_2020():
         assert n in disponibles
     assert "bidimensionales 2021-2036" in tablas.describir_tabla("cnu_tabmor_cb2020h")
     assert "historico" in tablas.describir_tabla("cnu_tabmor_rv2009h")
+
+
+def test_mejoramiento_bidimensional_ejemplo_oficial():
+    # Anexo N 9 de la SP: CB-H-2020, edad 65, agno 2022.
+    t = cnu.cargar_tabla_mortalidad("cb", 2020, "h")
+    q = t.qx_mejorado(2022, 65)
+    assert q[65] == pytest.approx(0.00852603117, abs=1e-9)
+    assert q[65] == pytest.approx(t.qx[65] * (1 - t.aa[65, 0]) * (1 - t.aa[65, 1]))
+
+
+def test_mejoramiento_bidimensional_edad_futura():
+    # Desde 65 en 2022, la edad 70 se evalua en 2027: factores de la fila 70 de 2021 a 2027.
+    t = cnu.cargar_tabla_mortalidad("cb", 2020, "h")
+    q = t.qx_mejorado(2022, 65)
+    assert q[70] == pytest.approx(t.qx[70] * np.prod(1 - t.aa[70, :7]))
+    # Edades anteriores a 2021 no se mejoran (producto vacio).
+    assert q[60] == pytest.approx(t.qx[60])
+
+
+def test_mejoramiento_bidimensional_repite_2036():
+    t = cnu.cargar_tabla_mortalidad("cb", 2020, "h")
+    q36 = t.qx_mejorado(2036, 65)
+    q37 = t.qx_mejorado(2037, 65)
+    np.testing.assert_allclose(q37[65:], q36[65:] * (1 - t.aa[65:, -1]))
+    assert q36[65] == pytest.approx(t.qx[65] * np.prod(1 - t.aa[65, :]))
+
+
+def test_mejoramiento_bidimensional_agno_base():
+    t = cnu.cargar_tabla_mortalidad("cb", 2020, "h")
+    q = t.qx_mejorado(2020, 65)
+    assert q[65] == t.qx[65]
+    np.testing.assert_array_equal(q[:66], t.qx[:66])
+    # En 2020 las edades futuras si acumulan mejoramiento (66 se evalua en 2021).
+    assert q[66] == pytest.approx(t.qx[66] * (1 - t.aa[66, 0]))

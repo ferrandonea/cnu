@@ -10,6 +10,13 @@ def test_afil(capsys):
     assert "vector 2013" in out
 
 
+def test_afil_tabla_2020(capsys):
+    assert main(["afil", "65", "--tabla", "cb2020", "--agno-actual", "2024"]) == 0
+    out = capsys.readouterr().out
+    assert "tabla cb2020" in out
+    assert float(out.strip().splitlines()[-1]) > 0
+
+
 def test_conyuge(capsys):
     main(["conyuge", "65", "63", "--agno-actual", "2011", "--agno-vector", "2011"])
     assert "2.231859" in capsys.readouterr().out

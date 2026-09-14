@@ -6,6 +6,7 @@ implementacion Mata final en hasta 5e-6; los valores de ``cnu_cnyg_s_hi`` y
 ``cnu_faji`` coinciden exactamente a 6 decimales.
 """
 
+import numpy as np
 import pytest
 
 import cnu
@@ -46,3 +47,19 @@ def test_faj_soltero():
 def test_faj_con_conyuge():
     # . cnu_faji 65 62, agnov(2013) rp(.03)   (en 2014)
     assert cnu.faj_afiliado(65, 62, agno_vector=2013, rp=0.03, agno_actual=2014) == pytest.approx(0.013094, abs=1e-6)
+
+
+def test_tablas_2020_explicitas_dan_valores_finitos():
+    import math
+
+    for v in (
+        cnu.cnu_afiliado(65, tabla="cb2020", agno_actual=2024),
+        cnu.cnu_afiliado(60, mujer=True, tabla="rv2020", agno_actual=2024),
+        cnu.cnu_conyuge(65, 62, tabla="cb2020", tabla_benef="b2020", agno_actual=2024),
+        cnu.cnu_conyuge(60, 65, cot_mujer=True, cony_mujer=False, tabla="rv2020", tabla_benef="cb2020", agno_actual=2024),
+        cnu.cnu_sobrevivencia_conyuge(62, mujer=True, tabla_benef="b2020", agno_actual=2024),
+        cnu.faj_afiliado(65, tabla="cb2020", agno_actual=2024),
+    ):
+        assert math.isfinite(v) and v > 0
+    r = cnu.proyectar_pension(65, 62, saldo=1000.0, tabla="cb2020", tabla_benef="b2020", agno_actual=2024)
+    assert np.all(np.isfinite(r.pension)) and np.all(r.pension > 0)

@@ -76,6 +76,18 @@ def _redondear(v: float) -> float:
     return round(float(v), 6)
 
 
+def _qx_hasta(qx: np.ndarray, edad_maxima: int) -> np.ndarray:
+    """Extiende ``qx`` con 1.0 hasta ``edad_maxima`` (nadie sobrevive mas alla de la tabla).
+
+    Las tablas historicas llegan a 210 agnos, pero las TM2014/TM2020 terminan
+    en 110 con ``qx = 1``; el CNU de conyuge recorre edades del afiliado
+    mayores que 110 cuando el conyuge es menor, y su ``lx`` ya es 0.
+    """
+    if len(qx) > edad_maxima:
+        return qx
+    return np.concatenate([qx, np.ones(edad_maxima + 1 - len(qx))])
+
+
 def tabla_mortalidad(
     tabla: str,
     rol: str,
@@ -177,11 +189,11 @@ def cnu_conyuge(
     agno_actual = _agno(agno_actual)
     tm_cot = tabla_mortalidad(tabla, ROL_AFILIADO, cot_mujer, fsiniestro, agno_actual, dir_tablas)
     tm_cony = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, cony_mujer, fsiniestro, agno_actual, dir_tablas)
-    qx_cot = tm_cot.qx_mejorado(agno_actual, x)
+    tmax = EDAD_MAXIMA - y + 1
+    qx_cot = _qx_hasta(tm_cot.qx_mejorado(agno_actual, x), x + tmax - 1)
     qx_cony = tm_cony.qx_mejorado(agno_actual, y)
     tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores)
 
-    tmax = EDAD_MAXIMA - y + 1
     cnu = 0.0
     lxt = 1.0
     lyt = 1.0

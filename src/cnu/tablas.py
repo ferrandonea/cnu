@@ -213,18 +213,45 @@ class TablaMortalidad:
         return np.column_stack([self.edades, self.qx[self.edades], self.aa[self.edades]])
 
     def qx_mejorado(self, agno_actual: int, edad: int) -> np.ndarray:
-        """Aplica el factor de mejoramiento (``cnu_mejorar_tabla`` en Mata).
+        """Aplica el factor de mejoramiento a la tabla, indexado por edad.
 
-        Devuelve ``qx * (1 - aa) ** (agno_actual - agno_tabla + edades - edad)``,
-        indexado por edad.
+        Para una persona de ``edad`` en ``agno_actual``, cada edad futura ``e``
+        se evalua en su agno calendario ``a = agno_actual + e - edad``.
+
+        * Historico (``cnu_mejorar_tabla`` en Mata):
+          ``qx * (1 - aa) ** (agno_actual - agno_tabla + e - edad)``.
+        * Bidimensional (TM2020, Anexo N 9 de la SP):
+          ``qx(e) * prod_{t=2021..a} (1 - AA(e, min(t, 2036)))``. Si
+          ``a <= 2020`` el producto es vacio y se devuelve el ``qx`` base;
+          despues de 2036 se repite el factor de ese agno.
         """
-        if self.bidimensional:
-            raise NotImplementedError(
-                f"El mejoramiento con factores bidimensionales ({self.nombre}) aun no esta implementado"
-            )
-        dif = agno_actual - self.agno
         edades = np.arange(len(self.qx))
-        return self.qx * (1.0 - self.aa) ** (dif + edades - edad)
+        if not self.bidimensional:
+            dif = agno_actual - self.agno
+            return self.qx * (1.0 - self.aa) ** (dif + edades - edad)
+        return self.qx * self._factor_bidimensional(int(agno_actual) + edades - int(edad))
+
+    def _factor_bidimensional(self, agnos: np.ndarray) -> np.ndarray:
+        """``prod_{t=agnos_aa[0]..agnos[e]} (1 - AA(e, t))`` para cada edad ``e``.
+
+        La columna de factores de un agno ``t`` es la del ultimo ``agnos_aa``
+        que no lo supera (con ``agnos_aa`` consecutivos, la de ese agno); los
+        agnos posteriores al ultimo repiten su factor.
+        """
+        agnos_aa = np.asarray(self.agnos_aa)
+        primero = agnos_aa[0]
+        ultimo = int(agnos.max())
+        if ultimo < primero:
+            return np.ones(len(self.qx))
+        # Agnos calendario a cubrir y columna de factores de cada uno.
+        calendario = np.arange(primero, ultimo + 1)
+        columna = np.searchsorted(agnos_aa, calendario, side="right") - 1
+        acumulado = np.cumprod(1.0 - self.aa[:, columna], axis=1)
+        # Producto acumulado hasta el agno de cada edad (1 si es anterior al primero).
+        factor = np.ones(len(self.qx))
+        con_factor = agnos >= primero
+        factor[con_factor] = acumulado[con_factor, agnos[con_factor] - primero]
+        return factor
 
 
 def nombre_tabla(tipo: str, agno: int, genero: str) -> str:
