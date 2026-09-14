@@ -29,7 +29,12 @@ def test_proy_csv(capsys):
 
 def test_tablas(capsys):
     main(["tablas"])
-    assert "cnu_tabmor_rv2009h" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "cnu_tabmor_rv2009h" in out
+    lineas = {l.split()[0]: l for l in out.splitlines() if l.strip().startswith("cnu_tabmor_")}
+    assert "factor historico" in lineas["cnu_tabmor_rv2009h"]
+    assert "cnu_tabmor_cb2014h" in lineas and "factor historico" in lineas["cnu_tabmor_cb2014h"]
+    assert "bidimensionales 2021-2036" in lineas["cnu_tabmor_cb2020h"]
 
 
 def test_pasos(capsys):

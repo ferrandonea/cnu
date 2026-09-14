@@ -2,8 +2,14 @@
 
 Las tablas y vectores incluidos en el paquete viven en ``cnu/data`` como CSV:
 
-* ``cnu_tabmor_[tipo][agno][genero].csv`` con columnas ``edad, qx, aa``
-  (tipo: ``rv`` afiliado, ``b`` beneficiario, ``mi`` invalidez; genero: ``h``/``m``).
+* ``cnu_tabmor_[tipo][agno][genero].csv`` (tipo: ``rv`` afiliado, ``b``
+  beneficiario, ``mi`` invalidez, ``cb`` combinada -solo hombres, desde 2014-;
+  genero: ``h``/``m``) con dos esquemas posibles de factores de mejoramiento:
+
+  - historico: columnas ``edad, qx, aa`` (un factor por edad);
+  - bidimensional (TM2020): columnas ``edad, qx, aa2021, ..., aa2036`` (un
+    factor por edad y agno calendario).
+
 * ``cnu_vec[agno].csv`` con columnas ``t, tasa`` (191 periodos).
 
 Tambien se pueden leer directorios externos (``dir_tablas`` / ``dir_vectores``)
@@ -23,8 +29,10 @@ from pathlib import Path
 
 import numpy as np
 
-TIPOS_TABLA = ("rv", "mi", "b")
+TIPOS_TABLA = ("rv", "mi", "b", "cb")
+TIPOS_SOLO_HOMBRES = ("cb",)
 GENEROS = ("h", "m")
+CABECERA_HISTORICA = ("edad", "qx", "aa")
 N_PERIODOS_VECTOR = 191
 
 _MATA_MAGIC = b"MAT\0R"
@@ -62,8 +70,11 @@ def escribir_matriz_mata(path: str | Path, matriz: np.ndarray, nombre: str = "x"
 # ---------------------------------------------------------------------------
 # Lectura generica (CSV o binario)
 # ---------------------------------------------------------------------------
-def _leer_csv(path: Path) -> np.ndarray:
-    return np.loadtxt(path, delimiter=",", skiprows=1, ndmin=2)
+def _leer_csv(path: Path) -> tuple[np.ndarray, list[str]]:
+    """Devuelve la matriz y los nombres de columna de la cabecera."""
+    with open(path, newline="") as f:
+        cabecera = [c.strip().lower() for c in next(csv.reader(f))]
+    return np.loadtxt(path, delimiter=",", skiprows=1, ndmin=2), cabecera
 
 
 def _buscar_archivo(nombre: str, directorio: str | Path | None) -> Path | None:
@@ -79,13 +90,14 @@ def _buscar_archivo(nombre: str, directorio: str | Path | None) -> Path | None:
     return None
 
 
-def _leer_archivo(path: Path) -> np.ndarray:
+def _leer_archivo(path: Path) -> tuple[np.ndarray, list[str] | None]:
+    """Matriz y cabecera; los binarios de Mata no tienen cabecera (``None``)."""
     if path.suffix == ".csv":
         return _leer_csv(path)
-    return leer_matriz_mata(path)
+    return leer_matriz_mata(path), None
 
 
-def _leer_empaquetado(nombre: str) -> np.ndarray | None:
+def _leer_empaquetado(nombre: str) -> tuple[np.ndarray, list[str]] | None:
     ref = resources.files("cnu") / "data" / f"{nombre}.csv"
     if not ref.is_file():
         return None
@@ -93,7 +105,7 @@ def _leer_empaquetado(nombre: str) -> np.ndarray | None:
         return _leer_csv(p)
 
 
-def _cargar(nombre: str, directorio: str | Path | None, descripcion: str) -> np.ndarray:
+def _cargar(nombre: str, directorio: str | Path | None, descripcion: str) -> tuple[np.ndarray, list[str] | None]:
     ruta = _buscar_archivo(nombre, directorio)
     if ruta is not None:
         return _leer_archivo(ruta)
@@ -111,8 +123,13 @@ def _cargar(nombre: str, directorio: str | Path | None, descripcion: str) -> np.
 class TablaMortalidad:
     """Tabla de mortalidad con factores de mejoramiento.
 
-    ``qx[e]`` y ``aa[e]`` estan indexados por edad ``e`` (0..edad_maxima); las
-    edades que la tabla no cubre quedan en ``nan``.
+    ``qx[e]`` esta indexado por edad ``e`` (0..edad_maxima); las edades que la
+    tabla no cubre quedan en ``nan``. Los factores de mejoramiento admiten dos
+    esquemas:
+
+    * historico: ``aa[e]`` unidimensional y ``agnos_aa`` igual a ``None``;
+    * bidimensional (TM2020): ``aa[e, j]`` es el factor de la edad ``e`` en el
+      agno ``agnos_aa[j]`` (2021..2036).
     """
 
     tipo: str
@@ -121,21 +138,56 @@ class TablaMortalidad:
     edades: np.ndarray
     qx: np.ndarray
     aa: np.ndarray
+    agnos_aa: tuple[int, ...] | None = None
 
     @classmethod
-    def desde_matriz(cls, tipo: str, agno: int, genero: str, matriz: np.ndarray) -> "TablaMortalidad":
-        if matriz.ndim != 2 or matriz.shape[1] != 3:
-            raise ValueError("La tabla debe tener 3 columnas ('edad', 'qx' y 'aa')")
+    def desde_matriz(
+        cls,
+        tipo: str,
+        agno: int,
+        genero: str,
+        matriz: np.ndarray,
+        agnos_aa: tuple[int, ...] | list[int] | None = None,
+    ) -> "TablaMortalidad":
+        """Construye la tabla desde una matriz cruda ``edad, qx, aa...``.
+
+        Con tres columnas la tabla es historica. Con mas de tres columnas hay
+        un factor por agno y se deben entregar los ``agnos_aa`` correspondientes
+        (uno por columna de factores), porque no se pueden inferir sin cabecera.
+        """
+        if matriz.ndim != 2 or matriz.shape[1] < 3:
+            raise ValueError("La tabla debe tener al menos 3 columnas ('edad', 'qx' y 'aa')")
+        n_factores = matriz.shape[1] - 2
+        if n_factores == 1 and not agnos_aa:
+            agnos_aa = None
+        else:
+            if not agnos_aa:
+                raise ValueError(
+                    f"La tabla tiene {n_factores} columnas de factores de mejoramiento pero no "
+                    "se entregaron sus agnos (agnos_aa); use un CSV con cabecera "
+                    "'edad,qx,aa2021,...' o indique agnos_aa explicitamente"
+                )
+            agnos_aa = tuple(int(a) for a in agnos_aa)
+            if len(agnos_aa) != n_factores:
+                raise ValueError(
+                    f"Se entregaron {len(agnos_aa)} agnos de factores pero la tabla tiene {n_factores} columnas de factores"
+                )
+            if any(b <= a for a, b in zip(agnos_aa, agnos_aa[1:])):
+                raise ValueError("Los agnos de los factores deben ser crecientes")
         edades = matriz[:, 0]
         if np.any(edades < 0) or np.any(edades != np.round(edades)):
             raise ValueError("La columna de edades debe contener enteros no negativos")
         edad_max = int(edades.max())
-        qx = np.full(edad_max + 1, np.nan)
-        aa = np.full(edad_max + 1, np.nan)
         idx = edades.astype(int)
+        qx = np.full(edad_max + 1, np.nan)
         qx[idx] = matriz[:, 1]
-        aa[idx] = matriz[:, 2]
-        return cls(tipo, int(agno), genero, idx, qx, aa)
+        if agnos_aa is None:
+            aa = np.full(edad_max + 1, np.nan)
+            aa[idx] = matriz[:, 2]
+        else:
+            aa = np.full((edad_max + 1, n_factores), np.nan)
+            aa[idx, :] = matriz[:, 2:]
+        return cls(tipo, int(agno), genero, idx, qx, aa, agnos_aa)
 
     @property
     def nombre(self) -> str:
@@ -145,7 +197,19 @@ class TablaMortalidad:
     def edad_maxima(self) -> int:
         return len(self.qx) - 1
 
+    @property
+    def bidimensional(self) -> bool:
+        """``True`` si los factores de mejoramiento son por edad y agno (TM2020)."""
+        return self.agnos_aa is not None
+
+    @property
+    def cabecera_csv(self) -> tuple[str, ...]:
+        if self.agnos_aa is None:
+            return CABECERA_HISTORICA
+        return ("edad", "qx", *(f"aa{a}" for a in self.agnos_aa))
+
     def como_matriz(self) -> np.ndarray:
+        """Matriz cruda ``edad, qx, aa...`` (una columna de factores por agno si es bidimensional)."""
         return np.column_stack([self.edades, self.qx[self.edades], self.aa[self.edades]])
 
     def qx_mejorado(self, agno_actual: int, edad: int) -> np.ndarray:
@@ -154,6 +218,10 @@ class TablaMortalidad:
         Devuelve ``qx * (1 - aa) ** (agno_actual - agno_tabla + edades - edad)``,
         indexado por edad.
         """
+        if self.bidimensional:
+            raise NotImplementedError(
+                f"El mejoramiento con factores bidimensionales ({self.nombre}) aun no esta implementado"
+            )
         dif = agno_actual - self.agno
         edades = np.arange(len(self.qx))
         return self.qx * (1.0 - self.aa) ** (dif + edades - edad)
@@ -177,6 +245,33 @@ def validar_genero(genero: str) -> str:
     return genero
 
 
+def validar_tipo(tipo: str, genero: str | None = None) -> str:
+    if tipo not in TIPOS_TABLA:
+        raise ValueError(f"Tipo de tabla '{tipo}' no permitido. Solo {', '.join(TIPOS_TABLA)} estan permitidos")
+    if genero is not None and tipo in TIPOS_SOLO_HOMBRES and genero != "h":
+        raise ValueError(f"La tabla combinada '{tipo}' solo existe para hombres (genero 'h'), no para '{genero}'")
+    return tipo
+
+
+def agnos_desde_cabecera(cabecera: list[str] | tuple[str, ...]) -> tuple[int, ...] | None:
+    """Agnos de los factores segun la cabecera CSV.
+
+    ``edad,qx,aa`` -> ``None`` (historica); ``edad,qx,aa2021,...`` -> ``(2021, ...)``.
+    """
+    cols = [c.strip().lower() for c in cabecera]
+    if tuple(cols) == CABECERA_HISTORICA:
+        return None
+    if len(cols) < 3 or cols[:2] != ["edad", "qx"]:
+        raise ValueError(f"Cabecera de tabla no reconocida: {','.join(cabecera)} (se esperaba 'edad,qx,aa' o 'edad,qx,aa2021,...')")
+    agnos = []
+    for c in cols[2:]:
+        m = re.fullmatch(r"aa(\d{4})", c)
+        if not m:
+            raise ValueError(f"Columna de factores no reconocida: '{c}' (se esperaba 'aa' o 'aaYYYY')")
+        agnos.append(int(m.group(1)))
+    return tuple(agnos)
+
+
 def genero_desde_bool(mujer: bool) -> str:
     return "m" if mujer else "h"
 
@@ -190,9 +285,14 @@ def cargar_tabla_mortalidad(
     Si ``directorio`` es ``None`` se usa la tabla incluida en el paquete.
     """
     validar_genero(genero)
+    validar_tipo(tipo, genero)
     nombre = nombre_tabla(tipo, agno, genero)
-    matriz = _cargar(nombre, directorio, "La tabla")
-    return TablaMortalidad.desde_matriz(tipo, int(agno), genero, matriz)
+    matriz, cabecera = _cargar(nombre, directorio, "La tabla")
+    agnos_aa = agnos_desde_cabecera(cabecera) if cabecera is not None else None
+    try:
+        return TablaMortalidad.desde_matriz(tipo, int(agno), genero, matriz, agnos_aa)
+    except ValueError as e:
+        raise ValueError(f"{nombre}: {e}") from None
 
 
 def guardar_tabla_mortalidad(
@@ -203,16 +303,29 @@ def guardar_tabla_mortalidad(
     directorio: str | Path,
     reemplazar: bool = False,
     formato: str = "csv",
+    agnos_aa: tuple[int, ...] | list[int] | None = None,
 ) -> Path:
-    """Guarda una tabla de mortalidad (``edad, qx, aa``) en ``directorio``.
+    """Guarda una tabla de mortalidad en ``directorio``.
 
-    ``formato`` puede ser ``"csv"`` o ``"mata"`` (binario original).
+    ``tabla`` puede ser una :class:`TablaMortalidad` o una matriz cruda
+    ``edad, qx, aa...``; con mas de tres columnas hay que entregar ``agnos_aa``
+    (un agno por columna de factores). ``formato`` puede ser ``"csv"`` o
+    ``"mata"`` (binario original). El binario no guarda la cabecera, asi que
+    una tabla bidimensional en ese formato solo se puede recuperar con
+    :meth:`TablaMortalidad.desde_matriz` indicando ``agnos_aa``.
     """
     validar_genero(genero)
-    m = tabla.como_matriz() if isinstance(tabla, TablaMortalidad) else np.asarray(tabla, dtype=float)
-    if m.ndim != 2 or m.shape[1] != 3:
-        raise ValueError(f"La tabla no tiene 3 columnas ('Edad', 'Qx' y 'Factor'), tiene {m.shape[-1]}")
-    return _guardar(m, nombre_tabla(tipo, agno, genero), directorio, reemplazar, formato, "edad,qx,aa")
+    validar_tipo(tipo, genero)
+    if isinstance(tabla, TablaMortalidad):
+        m = tabla.como_matriz()
+        cabecera = tabla.cabecera_csv
+    else:
+        m = np.asarray(tabla, dtype=float)
+        if m.ndim != 2 or m.shape[1] < 3:
+            raise ValueError(f"La tabla no tiene al menos 3 columnas ('Edad', 'Qx' y 'Factor'), tiene {m.shape[-1]}")
+        # desde_matriz valida agnos_aa y el numero de columnas
+        cabecera = TablaMortalidad.desde_matriz(tipo, agno, genero, m, agnos_aa).cabecera_csv
+    return _guardar(m, nombre_tabla(tipo, agno, genero), directorio, reemplazar, formato, ",".join(cabecera))
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +338,7 @@ def nombre_vector(agno: int) -> str:
 @lru_cache(maxsize=None)
 def cargar_vector_tasas(agno: int, directorio: str | Path | None = None) -> np.ndarray:
     """Devuelve las tasas del vector ``agno``: ``tasas[t - 1]`` es la tasa del periodo ``t``."""
-    matriz = _cargar(nombre_vector(agno), directorio, "La tabla (vector de tasas)")
+    matriz, _ = _cargar(nombre_vector(agno), directorio, "La tabla (vector de tasas)")
     if matriz.ndim != 2 or matriz.shape[1] != 2:
         raise ValueError("El vector de tasas debe tener 2 columnas ('t' y 'tasa')")
     orden = np.argsort(matriz[:, 0])
@@ -296,7 +409,7 @@ def agno_tabla_por_siniestro(fsiniestro: int, tipo: str) -> int:
 
     ``fsiniestro`` va en formato ``YYYYMMDD``.
     """
-    if tipo not in TIPOS_TABLA:
+    if tipo not in ("rv", "mi", "b"):
         raise ValueError(f"Tipo de tabla '{tipo}' no permitido. Solo rv, mi o b estan permitidos")
     f = int(fsiniestro)
     if tipo == "rv":
@@ -328,6 +441,18 @@ def tablas_disponibles() -> list[str]:
         for p in (resources.files("cnu") / "data").iterdir()
         if p.name.startswith("cnu_tabmor_") and p.name.endswith(".csv")
     )
+
+
+def describir_tabla(nombre: str) -> str:
+    """Descripcion corta de una tabla incluida: edades y esquema de factores."""
+    m = re.fullmatch(r"cnu_tabmor_([a-z]+)(\d+)([hm])", nombre)
+    if not m:
+        raise ValueError(f"Nombre de tabla no reconocido: {nombre}")
+    t = cargar_tabla_mortalidad(m.group(1), int(m.group(2)), m.group(3))
+    edades = f"edades {int(t.edades.min())}-{int(t.edades.max())}"
+    if t.bidimensional:
+        return f"{edades}, factores bidimensionales {t.agnos_aa[0]}-{t.agnos_aa[-1]}"
+    return f"{edades}, factor historico"
 
 
 def vectores_disponibles() -> list[int]:

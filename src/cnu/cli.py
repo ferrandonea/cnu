@@ -99,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     if c == "tablas":
         print("Tablas de mortalidad:")
         for t in tablas.tablas_disponibles():
-            print(f"  {t}")
+            print(f"  {t:24s} {tablas.describir_tabla(t)}")
         print("Vectores de tasas:")
         for v in tablas.vectores_disponibles():
             print(f"  cnu_vec{v}")
