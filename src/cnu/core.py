@@ -20,6 +20,7 @@ import numpy as np
 
 from .tablas import (
     N_PERIODOS_VECTOR,
+    TablaMortalidad,
     cargar_tabla_mortalidad,
     cargar_vector_tasas,
     genero_desde_bool,
@@ -34,6 +35,12 @@ FRACCION_CONYUGE = 0.6
 TABLA_AFILIADO = "rv2009"
 TABLA_BENEFICIARIO = "b2006"
 AGNO_VECTOR = 2013
+
+# Roles de la persona cuya mortalidad se modela; coinciden con el tipo de
+# tabla historico (rv afiliado, b beneficiario, mi invalido).
+ROL_AFILIADO = "rv"
+ROL_BENEFICIARIO = "b"
+ROL_INVALIDO = "mi"
 
 
 def agno_actual_por_defecto() -> int:
@@ -69,6 +76,29 @@ def _redondear(v: float) -> float:
     return round(float(v), 6)
 
 
+def tabla_mortalidad(
+    tabla: str,
+    rol: str,
+    mujer: bool,
+    fsiniestro: int = 0,
+    agno_actual: int | None = None,
+    dir_tablas=None,
+) -> TablaMortalidad:
+    """Punto unico de resolucion de tablas de mortalidad.
+
+    Traduce el nombre ``tabla`` (p.ej. ``"rv2009"``) a la tabla cargada que
+    corresponde a una persona con el ``rol`` dado (:data:`ROL_AFILIADO`,
+    :data:`ROL_BENEFICIARIO` o :data:`ROL_INVALIDO`) y sexo ``mujer``.
+
+    :param fsiniestro: fecha del siniestro ``YYYYMMDD``; si es distinta de 0,
+        el agno de la tabla se asigna dinamicamente segun la normativa.
+    :param agno_actual: agno de calculo. Junto con ``rol`` es el enganche para
+        resolver la tabla vigente; hoy no altera la seleccion.
+    """
+    tipo, agno_tabla = resolver_tabla(tabla, fsiniestro)
+    return cargar_tabla_mortalidad(tipo, agno_tabla, genero_desde_bool(mujer), dir_tablas)
+
+
 def cnu_afiliado(
     x: int,
     mujer: bool = False,
@@ -97,8 +127,7 @@ def cnu_afiliado(
     """
     x = int(x)
     agno_actual = _agno(agno_actual)
-    tipo, agno_tabla = resolver_tabla(tabla, fsiniestro)
-    tm = cargar_tabla_mortalidad(tipo, agno_tabla, genero_desde_bool(mujer), dir_tablas)
+    tm = tabla_mortalidad(tabla, ROL_AFILIADO, mujer, fsiniestro, agno_actual, dir_tablas)
     qx = tm.qx_mejorado(agno_actual, x)
     tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores)
 
@@ -146,10 +175,8 @@ def cnu_conyuge(
     """
     x, y = int(x), int(y)
     agno_actual = _agno(agno_actual)
-    tipo_cot, agno_cot = resolver_tabla(tabla, fsiniestro)
-    tipo_cony, agno_cony = resolver_tabla(tabla_benef, fsiniestro)
-    tm_cot = cargar_tabla_mortalidad(tipo_cot, agno_cot, genero_desde_bool(cot_mujer), dir_tablas)
-    tm_cony = cargar_tabla_mortalidad(tipo_cony, agno_cony, genero_desde_bool(cony_mujer), dir_tablas)
+    tm_cot = tabla_mortalidad(tabla, ROL_AFILIADO, cot_mujer, fsiniestro, agno_actual, dir_tablas)
+    tm_cony = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, cony_mujer, fsiniestro, agno_actual, dir_tablas)
     qx_cot = tm_cot.qx_mejorado(agno_actual, x)
     qx_cony = tm_cony.qx_mejorado(agno_actual, y)
     tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores)
@@ -193,8 +220,7 @@ def cnu_sobrevivencia_conyuge(
     """
     y = int(y)
     agno_actual = _agno(agno_actual)
-    tipo, agno_tabla = resolver_tabla(tabla_benef, fsiniestro)
-    tm = cargar_tabla_mortalidad(tipo, agno_tabla, genero_desde_bool(mujer), dir_tablas)
+    tm = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, mujer, fsiniestro, agno_actual, dir_tablas)
     qx = tm.qx_mejorado(agno_actual, y)
     tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores)
 
@@ -221,14 +247,21 @@ def describir(
     rv: float | None = None,
     rp: float | None = None,
     fsiniestro: int = 0,
+    mujer: bool = False,
+    benef_mujer: bool = True,
+    dir_tablas=None,
 ) -> str:
-    """Etiqueta descriptiva del calculo, al estilo de los comandos de Stata."""
+    """Etiqueta descriptiva del calculo, al estilo de los comandos de Stata.
+
+    ``tabla`` es la del afiliado (sexo ``mujer``) y ``tabla_benef`` la del
+    beneficiario (sexo ``benef_mujer``).
+    """
     agno_actual = _agno(agno_actual)
     tablas = []
-    for t in (tabla, tabla_benef):
+    for t, rol, es_mujer in ((tabla, ROL_AFILIADO, mujer), (tabla_benef, ROL_BENEFICIARIO, benef_mujer)):
         if t:
-            tipo, agno = resolver_tabla(t, fsiniestro)
-            tablas.append(f"{tipo}{agno}")
+            tm = tabla_mortalidad(t, rol, es_mujer, fsiniestro, agno_actual, dir_tablas)
+            tablas.append(f"{tm.tipo}{tm.agno}")
     etiqueta_tablas = ("tablas " if len(tablas) > 1 else "tabla ") + " ".join(tablas)
     if rv is not None:
         return f"CNU RV para {tipo_cnu} ({etiqueta_tablas}), tasa {rv * 100:g}% en el año {agno_actual}"

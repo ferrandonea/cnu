@@ -111,19 +111,21 @@ def main(argv: list[str] | None = None) -> int:
     if c == "afil":
         v = core.cnu_afiliado(args.x, args.mujer, args.tabla, rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
         print(core.describir("soltero sin hijos", args.tabla, None, args.agno_vector, args.agno_actual,
-                             args.rv, args.rp, args.fsiniestro))
+                             args.rv, args.rp, args.fsiniestro, mujer=args.mujer, dir_tablas=args.dir_tablas))
         print(f"{v:9.6f}")
     elif c == "conyuge":
         v = core.cnu_conyuge(args.x, args.y, args.cot_mujer, not args.cony_hombre, args.tabla, args.tabla_benef,
                              rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
         print(core.describir("conyuge sin hijos", args.tabla, args.tabla_benef, args.agno_vector,
-                             args.agno_actual, args.rv, args.rp, args.fsiniestro))
+                             args.agno_actual, args.rv, args.rp, args.fsiniestro,
+                             mujer=args.cot_mujer, benef_mujer=not args.cony_hombre, dir_tablas=args.dir_tablas))
         print(f"{v:9.6f}")
     elif c == "sobrev":
         v = core.cnu_sobrevivencia_conyuge(args.y, args.mujer, args.tabla_benef, rv=args.rv, rp=args.rp,
                                            pasos=args.pasos, **comunes)
         print(core.describir("sobrevivencia de conyuge sin hijos", None, args.tabla_benef, args.agno_vector,
-                             args.agno_actual, args.rv, args.rp, args.fsiniestro))
+                             args.agno_actual, args.rv, args.rp, args.fsiniestro,
+                             benef_mujer=args.mujer, dir_tablas=args.dir_tablas))
         print(f"{v:9.6f}")
     elif c == "faj":
         v = _faj.faj_afiliado(

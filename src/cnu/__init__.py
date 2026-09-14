@@ -20,12 +20,16 @@ from .core import (  # noqa: E402
     AGNO_VECTOR,
     EDAD_MAXIMA,
     EDAD_MINIMA,
+    ROL_AFILIADO,
+    ROL_BENEFICIARIO,
+    ROL_INVALIDO,
     TABLA_AFILIADO,
     TABLA_BENEFICIARIO,
     cnu_afiliado,
     cnu_conyuge,
     cnu_sobrevivencia_conyuge,
     describir,
+    tabla_mortalidad,
     tasas_por_periodo,
 )
 from .faj import calcular_faj, faj_afiliado, faj_afiliado_vec, faj_funcion_objetivo  # noqa: E402
@@ -60,13 +64,14 @@ def main() -> None:
 
 
 __all__ = [
-    "AGNO_VECTOR", "EDAD_MAXIMA", "EDAD_MINIMA", "TABLA_AFILIADO", "TABLA_BENEFICIARIO",
+    "AGNO_VECTOR", "EDAD_MAXIMA", "EDAD_MINIMA", "ROL_AFILIADO", "ROL_BENEFICIARIO", "ROL_INVALIDO",
+    "TABLA_AFILIADO", "TABLA_BENEFICIARIO",
     "AdvertenciaCNU", "ProyeccionPension", "TablaMortalidad",
     "agno_tabla_por_siniestro", "calcular_faj", "cargar_tabla_mortalidad", "cargar_vector_tasas",
     "cnu_afiliado", "cnu_afiliado_vec", "cnu_conyuge", "cnu_conyuge_vec",
     "cnu_sobrevivencia_conyuge", "cnu_sobrevivencia_conyuge_vec", "describir",
     "escribir_matriz_mata", "faj_afiliado", "faj_afiliado_vec", "faj_funcion_objetivo",
     "guardar_tabla_mortalidad", "guardar_vector_tasas", "leer_matriz_mata", "main",
-    "proyectar_cnu", "proyectar_pension", "tablas_disponibles", "tasas_por_periodo",
+    "proyectar_cnu", "proyectar_pension", "tabla_mortalidad", "tablas_disponibles", "tasas_por_periodo",
     "vectores_disponibles",
 ]
