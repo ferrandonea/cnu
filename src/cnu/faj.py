@@ -13,7 +13,6 @@ import numpy as np
 
 from . import core
 from .core import AGNO_VECTOR, EDAD_MAXIMA, EDAD_MINIMA, TABLA_AFILIADO, TABLA_BENEFICIARIO
-from .tablas import cargar_vector_tasas, existe_vector_tasas
 
 EDAD_MAXIMA_FAJ = 98
 PCENT = 0.3
@@ -43,7 +42,7 @@ def faj_funcion_objetivo(
         rp0 = saldo / cnu[0]
     suma = 0.0
     saldo_t = saldo
-    for t in range(0, int(edad_maxima) - int(x) + 1):
+    for t in range(0, int(edad_maxima) - core.edad_entera(x) + 1):
         pens_t = saldo_t / cnu[t]
         saldo_t = (saldo_t - pens_t) * (1 + rp_a[t])
         suma += (pens_t - max((1 - faj) * pens_t, pcent * rp0)) / (1 + rp_a[t]) ** (t + 1)
@@ -120,16 +119,12 @@ def faj_afiliado(
     """
     from .proyeccion import proyectar_cnu  # importacion diferida (ciclo)
 
-    x = int(x)
+    x = core.edad_entera(x)
     cnu = proyectar_cnu(
         x, y, cot_mujer, cony_mujer, tabla, tabla_benef, agno_vector, agno_actual,
         None, None, fsiniestro, dir_tablas, dir_vectores,
     )
-    n = EDAD_MAXIMA - x + 1
-    if rp is None or core._es_missing(rp):
-        rp_a = cargar_vector_tasas(int(agno_vector), dir_vectores)
-    else:
-        rp_a = np.full(n, float(rp))
+    rp_a = core.tasas_por_periodo(agno_vector, None, rp, dir_vectores, fsiniestro)
     return calcular_faj(x, cnu, rp_a, edad_maxima, saldo, pcent, rp0, criter, maxiter)
 
 
@@ -178,19 +173,17 @@ def faj_afiliado_vec(
     for i in range(n):
         if not a["incluir"][i] or math.isnan(x[i]):
             continue
-        xi = int(x[i])
+        xi = core.edad_entera(x[i])
         if xi < EDAD_MINIMA or xi > EDAD_MAXIMA:
             continue
-        rp_i = a["rp"][i]
         agno_vec = int(a["agno_vector"][i])
-        if math.isnan(rp_i):
-            if not existe_vector_tasas(agno_vec, dir_vectores):
-                sin_vector.append(i)
-                continue
-            rp_a = cargar_vector_tasas(agno_vec, dir_vectores)
-        else:
-            rp_a = np.full(EDAD_MAXIMA, float(rp_i))
-        yi = None if math.isnan(a["y"][i]) else int(a["y"][i])
+        rp_a = core.tasas_por_periodo(
+            agno_vec, None, a["rp"][i], dir_vectores, int(a["fsiniestro"][i]), estricto=False
+        )
+        if rp_a is None:
+            sin_vector.append(i)
+            continue
+        yi = None if math.isnan(a["y"][i]) else core.edad_entera(a["y"][i])
         agno_act = None if math.isnan(a["agno_actual"][i]) else int(a["agno_actual"][i])
         cnu = proyectar_cnu(
             xi, yi, bool(a["cot_mujer"][i]), bool(a["cony_mujer"][i]), a["tabla"][i], a["tabla_benef"][i],

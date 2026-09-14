@@ -68,7 +68,7 @@ def proyectar_cnu(
     (``fsiniestro`` o, con ``"vigente"``, el 31 de diciembre de
     ``agno_actual``), y se usan en toda la trayectoria.
     """
-    x = int(x)
+    x = core.edad_entera(x)
     agno_actual = core._agno(agno_actual)
     tabla, tabla_benef = _tablas_resueltas(
         y, cot_mujer, cony_mujer, tabla, tabla_benef, agno_actual, fsiniestro, dir_tablas
@@ -91,7 +91,7 @@ def proyectar_cnu(
             fsiniestro, False, dir_tablas, dir_vectores,
         )
         if y is not None and not core._es_missing(y):
-            ey = int(y) + j
+            ey = core.edad_entera(y) + j
             if EDAD_MINIMA <= ey <= EDAD_MAXIMA:
                 cnu[j] += core.cnu_conyuge(
                     ex, ey, cot_mujer, cony_mujer, tabla, tabla_benef, agno_vector, agno,
@@ -173,7 +173,7 @@ def proyectar_pension(
     :param faj: si ``True``, la pension incluye Factor de Ajuste (ver :mod:`cnu.faj`).
     :param edad_maxima, pcent, rp0, criter, maxiter: parametros del FAJ.
     """
-    x = int(x)
+    x = core.edad_entera(x)
     agno_actual = core._agno(agno_actual)
     tabla, tabla_benef = _tablas_resueltas(
         y, cot_mujer, cony_mujer, tabla, tabla_benef, agno_actual, fsiniestro, dir_tablas
@@ -185,7 +185,7 @@ def proyectar_pension(
         x, y, cot_mujer, cony_mujer, tabla, tabla_benef, agno_vector, agno_actual,
         None, rp, fsiniestro, dir_tablas, dir_vectores,
     )
-    tasas = core.tasas_por_periodo(agno_vector, None, rp, dir_vectores)
+    tasas = core.tasas_por_periodo(agno_vector, None, rp, dir_vectores, fsiniestro)
     edades = np.arange(x, EDAD_MAXIMA + 1, dtype=float)
 
     quien = "afiliado soltero" if y is None else "afiliado con conyuge"

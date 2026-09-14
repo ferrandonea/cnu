@@ -22,7 +22,6 @@ import numpy as np
 
 from . import core
 from .core import AGNO_VECTOR, EDAD_MAXIMA, EDAD_MINIMA, TABLA_AFILIADO, TABLA_BENEFICIARIO
-from .tablas import existe_vector_tasas
 
 MAX_LISTADO = 20
 
@@ -78,10 +77,11 @@ def _advertir(errores: dict[str, list[int]], mensajes: dict[str, str]) -> None:
         )
 
 
-def _vector_ok(agno_vector, rv, rp, dir_vectores) -> bool:
-    if rv is not None or rp is not None:
-        return True
-    return existe_vector_tasas(agno_vector, dir_vectores)
+def _sin_tasas(a: dict[str, np.ndarray], j: int, rv, rp, dir_vectores) -> bool:
+    """``True`` si :func:`cnu.core.tasas_por_periodo` no puede resolver la fila ``j``."""
+    return core.tasas_por_periodo(
+        a["agno_vector"][j], rv, rp, dir_vectores, int(a["fsiniestro"][j]), estricto=False
+    ) is None
 
 
 def cnu_afiliado_vec(
@@ -115,14 +115,14 @@ def cnu_afiliado_vec(
     for j in range(n):
         if not a["incluir"][j] or math.isnan(x[j]):
             continue
-        edad = int(x[j])
+        edad = core.edad_entera(x[j])
         rv_j = _opcional(a["rv"][j]) if modo_rv else None
         rp_j = _opcional(a["rp"][j]) if modo_rp else None
         if edad < EDAD_MINIMA:
             errores["menor_20"].append(j)
         elif edad > EDAD_MAXIMA:
             errores["mayor_110"].append(j)
-        elif not _vector_ok(a["agno_vector"][j], rv_j, rp_j, dir_vectores):
+        elif _sin_tasas(a, j, rv_j, rp_j, dir_vectores):
             errores["vector"].append(j)
         elif modo_rv and rv_j is None:
             continue  # RV con tasa faltante en esta fila -> nan
@@ -178,7 +178,7 @@ def cnu_conyuge_vec(
     for j in range(n):
         if not a["incluir"][j] or math.isnan(x[j]) or math.isnan(y[j]):
             continue
-        ex, ey = int(x[j]), int(y[j])
+        ex, ey = core.edad_entera(x[j]), core.edad_entera(y[j])
         rv_j = _opcional(a["rv"][j]) if modo_rv else None
         rp_j = _opcional(a["rp"][j]) if modo_rp else None
         if ex < EDAD_MINIMA:
@@ -187,7 +187,7 @@ def cnu_conyuge_vec(
             errores["menor_20_cony"].append(j)
         elif ex > EDAD_MAXIMA:
             errores["mayor_110_cot"].append(j)
-        elif not _vector_ok(a["agno_vector"][j], rv_j, rp_j, dir_vectores):
+        elif _sin_tasas(a, j, rv_j, rp_j, dir_vectores):
             errores["vector"].append(j)
         elif ey > EDAD_MAXIMA:
             errores["mayor_110_cony"].append(j)
@@ -239,14 +239,14 @@ def cnu_sobrevivencia_conyuge_vec(
     for j in range(n):
         if not a["incluir"][j] or math.isnan(y[j]):
             continue
-        edad = int(y[j])
+        edad = core.edad_entera(y[j])
         rv_j = _opcional(a["rv"][j]) if modo_rv else None
         rp_j = _opcional(a["rp"][j]) if modo_rp else None
         if edad < EDAD_MINIMA:
             errores["menor_20"].append(j)
         elif edad > EDAD_MAXIMA:
             errores["mayor_110"].append(j)
-        elif not _vector_ok(a["agno_vector"][j], rv_j, rp_j, dir_vectores):
+        elif _sin_tasas(a, j, rv_j, rp_j, dir_vectores):
             errores["vector"].append(j)
         elif modo_rv and rv_j is None:
             continue

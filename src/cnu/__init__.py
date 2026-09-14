@@ -30,6 +30,7 @@ from .core import (  # noqa: E402
     cnu_conyuge,
     cnu_sobrevivencia_conyuge,
     describir,
+    edad_entera,
     tabla_mortalidad,
     tasas_por_periodo,
 )
@@ -71,7 +72,7 @@ __all__ = [
     "AdvertenciaCNU", "ProyeccionPension", "TablaMortalidad",
     "agno_tabla_por_siniestro", "calcular_faj", "cargar_tabla_mortalidad", "cargar_vector_tasas",
     "cnu_afiliado", "cnu_afiliado_vec", "cnu_conyuge", "cnu_conyuge_vec",
-    "cnu_sobrevivencia_conyuge", "cnu_sobrevivencia_conyuge_vec", "describir",
+    "cnu_sobrevivencia_conyuge", "cnu_sobrevivencia_conyuge_vec", "describir", "edad_entera",
     "escribir_matriz_mata", "faj_afiliado", "faj_afiliado_vec", "faj_funcion_objetivo",
     "guardar_tabla_mortalidad", "guardar_vector_tasas", "leer_matriz_mata", "main",
     "proyectar_cnu", "proyectar_pension", "tabla_mortalidad", "tabla_por_fecha", "tablas_disponibles",

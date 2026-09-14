@@ -24,6 +24,7 @@ from .tablas import (
     TablaMortalidad,
     cargar_tabla_mortalidad,
     cargar_vector_tasas,
+    existe_vector_tasas,
     genero_desde_bool,
     resolver_tabla,
 )
@@ -59,13 +60,38 @@ def tasas_por_periodo(
     rv: float | None = None,
     rp: float | None = None,
     dir_vectores=None,
-) -> np.ndarray:
-    """Vector de tasas por periodo (``tasas[t-1]`` para el periodo ``t``)."""
+    fsiniestro: int = 0,
+    estricto: bool = True,
+) -> np.ndarray | None:
+    """Punto unico de resolucion de la tasa de descuento.
+
+    Devuelve el vector de tasas por periodo (``tasas[t-1]`` para el periodo
+    ``t``) que usan las funciones escalares, vectoriales, el FAJ, las
+    proyecciones y la CLI, con la regla:
+
+    * ``rv`` dado (no ``nan``) -> tasa constante ``rv`` (Renta Vitalicia);
+    * ``rp`` dado (no ``nan``) -> tasa constante ``rp`` (Retiro Programado);
+    * ninguno -> vector de tasas ``agno_vector`` (Retiro Programado).
+
+    :param fsiniestro: fecha del siniestro ``YYYYMMDD`` (0 si no se conoce);
+        por ahora no interviene en la seleccion.
+    :param estricto: si es ``False`` devuelve ``None`` en vez de lanzar un
+        error cuando no es posible resolver las tasas (vector inexistente).
+    """
     if rv is not None and not _es_missing(rv):
         return np.full(N_PERIODOS_VECTOR, float(rv))
     if rp is not None and not _es_missing(rp):
         return np.full(N_PERIODOS_VECTOR, float(rp))
+    if estricto:
+        return cargar_vector_tasas(int(agno_vector), dir_vectores)
+    if not existe_vector_tasas(agno_vector, dir_vectores):
+        return None
     return cargar_vector_tasas(int(agno_vector), dir_vectores)
+
+
+def edad_entera(edad) -> int:
+    """Punto unico de conversion de una edad a entero (por ahora, trunca)."""
+    return int(edad)
 
 
 def _es_missing(v) -> bool:
@@ -171,11 +197,11 @@ def cnu_afiliado(
         el agno de la tabla se asigna dinamicamente.
     :param pasos: imprime el calculo periodo a periodo.
     """
-    x = int(x)
+    x = edad_entera(x)
     agno_actual = _agno(agno_actual)
     tm = tabla_mortalidad(tabla, ROL_AFILIADO, mujer, fsiniestro, agno_actual, dir_tablas)
     qx = tm.qx_mejorado(agno_actual, x)
-    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores)
+    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores, fsiniestro)
 
     tmax = EDAD_MAXIMA - x + 1
     cnu = 1.0
@@ -220,14 +246,14 @@ def cnu_conyuge(
     :param tabla: tabla del afiliado (p.ej. ``"rv2009"``; por defecto ``"vigente"``).
     :param tabla_benef: tabla del beneficiario (p.ej. ``"b2006"``; por defecto ``"vigente"``).
     """
-    x, y = int(x), int(y)
+    x, y = edad_entera(x), edad_entera(y)
     agno_actual = _agno(agno_actual)
     tm_cot = tabla_mortalidad(tabla, ROL_AFILIADO, cot_mujer, fsiniestro, agno_actual, dir_tablas)
     tm_cony = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, cony_mujer, fsiniestro, agno_actual, dir_tablas)
     tmax = EDAD_MAXIMA - y + 1
     qx_cot = _qx_hasta(tm_cot.qx_mejorado(agno_actual, x), x + tmax - 1)
     qx_cony = tm_cony.qx_mejorado(agno_actual, y)
-    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores)
+    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores, fsiniestro)
 
     cnu = 0.0
     lxt = 1.0
@@ -267,11 +293,11 @@ def cnu_sobrevivencia_conyuge(
     :param tabla_benef: tabla de mortalidad del beneficiario (p.ej. ``"b2006"``;
         por defecto ``"vigente"``).
     """
-    y = int(y)
+    y = edad_entera(y)
     agno_actual = _agno(agno_actual)
     tm = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, mujer, fsiniestro, agno_actual, dir_tablas)
     qx = tm.qx_mejorado(agno_actual, y)
-    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores)
+    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores, fsiniestro)
 
     tmax = EDAD_MAXIMA - y
     cnu = 1.0
