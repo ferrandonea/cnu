@@ -124,3 +124,30 @@ def test_hijo_vec_filas_invalidas():
     with pytest.warns(cnu.AdvertenciaCNU, match="edad negativa"):
         v = cnu.cnu_sobrevivencia_hijo_vec([-1, 0, np.nan], rp=0.03, agno_actual=2026)
     assert np.isnan(v[0]) and v[1] > 0 and np.isnan(v[2])
+
+
+def test_hijo_invalido_vec_coincide_con_escalar():
+    x, h, mujer, parcial = [65, 60, 65, 65], [10, 21, 30, 30], [False, True, False, True], [False, True, False, True]
+    cot = [False, True, False, False]
+    v = cnu.cnu_hijo_invalido_vec(x, h, cot_mujer=cot, hijo_mujer=mujer, parcial=parcial, rp=0.03, agno_actual=2026)
+    e = [cnu.cnu_hijo_invalido(a, b, c, m, p, rp=0.03, agno_actual=2026) for a, b, c, m, p in zip(x, h, cot, mujer, parcial)]
+    np.testing.assert_allclose(v, e)
+    assert (v > 0).all()  # sin edad limite: los hijos de 30 tienen CNU positivo
+    v = cnu.cnu_sobrevivencia_hijo_invalido_vec(h, mujer=mujer, parcial=True, rp=[0.03, np.nan, 0.03, 0.03],
+                                                fsiniestro=[0, 20130101, 0, 0], agno_actual=2026)
+    e = [cnu.cnu_sobrevivencia_hijo_invalido(10, parcial=True, rp=0.03, agno_actual=2026),
+         cnu.cnu_sobrevivencia_hijo_invalido(21, mujer=True, parcial=True, fsiniestro=20130101, agno_actual=2026),
+         cnu.cnu_sobrevivencia_hijo_invalido(30, parcial=True, rp=0.03, agno_actual=2026),
+         cnu.cnu_sobrevivencia_hijo_invalido(30, mujer=True, parcial=True, rp=0.03, agno_actual=2026)]
+    np.testing.assert_allclose(v, e)
+
+
+def test_hijo_invalido_vec_filas_invalidas():
+    with pytest.warns(cnu.AdvertenciaCNU, match="hijos tienen edad negativa") as w:
+        v = cnu.cnu_hijo_invalido_vec([65, 19, 65, 65], [-1, 10, 10, 10], rp=[0.03, 0.03, np.nan, 0.03],
+                                      agno_actual=2026, incluir=[True, True, True, False])
+    assert "cotizantes tienen menos de 20" in str(w[0].message) and "sin tasa" in str(w[0].message)
+    assert np.isnan(v).all()
+    with pytest.warns(cnu.AdvertenciaCNU, match="edad negativa"):
+        v = cnu.cnu_sobrevivencia_hijo_invalido_vec([-1, 0, np.nan], parcial=[True, False, True], rp=0.03, agno_actual=2026)
+    assert np.isnan(v[0]) and v[1] > 0 and np.isnan(v[2])

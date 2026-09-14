@@ -206,3 +206,154 @@ def test_hijo_edad_limite_y_monotonia():
     )
     d = cnu.describir("hijo no inválido 15%", "vigente", "vigente", rp=0.03, agno_actual=2026, benef_mujer=False)
     assert d == "CNU RP para hijo no inválido 15% (tablas cb2020h cb2020h), tasa 3% en el año 2026"
+
+
+def _formula_hijo_invalido_anexo7(h, x=None, parcial=False, i=0.03, agno=2026, hijo_mujer=False, cot_mujer=False):
+    """Transcripcion directa de las letras 1.e (sin ``x``) y 2.f (con ``x``)
+    del Anexo N 7 para hijos invalidos, con tasa constante ``i`` y las tablas
+    vigentes en ``agno`` (la del hijo es la de invalidos ``mi``).
+
+    Procedimiento (z = 24, N = z - hi, w hasta los 110 agnos, t = 0..w):
+
+    1. ``q_hi+t`` mejorados a ``agno`` de la tabla ``mi`` del sexo del hijo
+       (``q = 1`` mas alla de la tabla) y, para 2.f, ``q_x+t`` de la del afiliado.
+    2. ``l_0 = 1``, ``l_t = l_{t-1} (1 - q_{hi+t-1})`` (idem ``l^x_t``).
+    3. ``v_t = 1 / (1 + i)^t``; en 2.f cada termino lleva ``(1 - l^x_t)``.
+    4. Total:   1.e ``0,15 [ sum_{t=0}^{w} l_t v_t - 11/24 ]``;
+                2.f ``0,15 sum_{t=0}^{w} l_t (1 - l^x_t) v_t`` (sin ajuste).
+       Parcial, hi < 24:
+                1.e ``0,15 [ sum_{t<N} l_t v_t - 11/24 (1 - l_N v_N) ]
+                     + 0,11 [ sum_{t>=N} l_t v_t - 11/24 l_N v_N ]``;
+                2.f ``0,15 sum_{t<N} l_t (1 - l^x_t) v_t + 0,11 sum_{t>=N} l_t (1 - l^x_t) v_t
+                     + 0,04 * 11/24 l_N v_N (1 - l^x_N)``.
+       Parcial, hi >= 24: la formula del total con 0,11 en vez de 0,15.
+    """
+    w = 110 - h + (0 if x is None else 1)
+    q = np.concatenate([cnu.tabla_mortalidad("vigente", cnu.ROL_INVALIDO, hijo_mujer, agno_actual=agno)
+                        .qx_mejorado(agno, h), np.ones(200)])
+    lh = [1.0]
+    for t in range(w + 1):
+        lh.append(lh[-1] * (1 - q[h + t]))
+    v = [(1 + i) ** -t for t in range(w + 2)]
+    n = 24 - h
+    if x is None:
+        vit = sum(lh[t] * v[t] for t in range(w + 1)) - 11 / 24
+        if not parcial:
+            return round(0.15 * vit, 6)
+        if h >= 24:
+            return round(0.11 * vit, 6)
+        temporal = sum(lh[t] * v[t] for t in range(n)) - 11 / 24 * (1 - lh[n] * v[n])
+        diferida = sum(lh[t] * v[t] for t in range(n, w + 1)) - 11 / 24 * lh[n] * v[n]
+        return round(0.15 * temporal + 0.11 * diferida, 6)
+    qx = np.concatenate([cnu.tabla_mortalidad("vigente", cnu.ROL_AFILIADO, cot_mujer, agno_actual=agno)
+                         .qx_mejorado(agno, x), np.ones(300)])
+    lx = [1.0]
+    for t in range(w + 1):
+        lx.append(lx[-1] * (1 - qx[x + t]))
+    termino = [lh[t] * (1 - lx[t]) * v[t] for t in range(w + 1)]
+    if not parcial:
+        return round(0.15 * sum(termino), 6)
+    if h >= 24:
+        return round(0.11 * sum(termino), 6)
+    ajuste = 11 / 24 * lh[n] * v[n] * (1 - lx[n])
+    return round(0.15 * sum(termino[:n]) + 0.11 * sum(termino[n:]) + 0.04 * ajuste, 6)
+
+
+def test_hijo_invalido_valores_de_referencia_anexo7():
+    """Hijo invalido de 21 agnos (mujer, mi2020m) y afiliado de 65 (cb2020h),
+    tasa 3% en 2026; N = 3 periodos hasta los 24.
+
+    Con q_21..q_23 = 0.00321774, 0.00328866, 0.00332736 (mi2020m mejorada a
+    2026) resulta l_1..l_3 = 0.99678226, 0.99350435, 0.99019843, v_3 = 0.91514166,
+    y sumando la vitalicia hasta los 110:
+
+        1.e total:   0,15 [ 26.721846 - 11/24 ] = 0,15 * 26.263401 = 3.939510
+        1.e parcial: temporal = 1 + 0.99678226/1.03 + 0.99350435/1.03^2
+                                - 11/24 (1 - 0.99019843 * 0.91514166) = 2.861218
+                     diferida = sum_{t>=3} l_t v_t - 11/24 * 0.99019843 * 0.91514166 = 23.402183
+                     0,15 * 2.861218 + 0,11 * 23.402183 = 3.003423
+
+    Con l^x_1..l^x_3 = 0.99205009, 0.98334615, 0.97367639 (cb2020h a 2026):
+
+        2.f total:   0,15 * 11.436617 = 1.715493
+        2.f parcial: 0,15 * 0.023289 + 0,11 * 11.413327
+                     + 0,04 * 11/24 * 0.99019843 * 0.91514166 * (1 - 0.97367639) = 1.259397
+
+    Hijo invalido total de 30 agnos (hombre, mi2020h) con afiliado de 65:
+    2.f total 0,15 * 8.383032 = 1.257455 (positivo: no hay edad limite).
+    """
+    assert _formula_hijo_invalido_anexo7(21, hijo_mujer=True) == 3.939510
+    assert cnu.cnu_sobrevivencia_hijo_invalido(21, mujer=True, rp=0.03, agno_actual=2026) == 3.939510
+    assert _formula_hijo_invalido_anexo7(21, parcial=True, hijo_mujer=True) == 3.003423
+    assert cnu.cnu_sobrevivencia_hijo_invalido(21, mujer=True, parcial=True, rp=0.03, agno_actual=2026) == 3.003423
+    assert _formula_hijo_invalido_anexo7(21, x=65, hijo_mujer=True) == 1.715493
+    assert cnu.cnu_hijo_invalido(65, 21, hijo_mujer=True, rp=0.03, agno_actual=2026) == 1.715493
+    assert _formula_hijo_invalido_anexo7(21, x=65, parcial=True, hijo_mujer=True) == 1.259397
+    assert cnu.cnu_hijo_invalido(65, 21, hijo_mujer=True, parcial=True, rp=0.03, agno_actual=2026) == 1.259397
+    assert _formula_hijo_invalido_anexo7(30, x=65) == 1.257455
+    assert cnu.cnu_hijo_invalido(65, 30, rp=0.03, agno_actual=2026) == 1.257455
+    # Otras edades y grados, contra la misma transcripcion de la formula.
+    for h in (0, 10, 23, 24, 30, 60):
+        for parcial in (False, True):
+            assert cnu.cnu_sobrevivencia_hijo_invalido(h, parcial=parcial, rp=0.03, agno_actual=2026) == (
+                _formula_hijo_invalido_anexo7(h, parcial=parcial)
+            )
+            assert cnu.cnu_hijo_invalido(65, h, parcial=parcial, rp=0.03, agno_actual=2026) == (
+                _formula_hijo_invalido_anexo7(h, x=65, parcial=parcial)
+            )
+    assert cnu.cnu_hijo_invalido(60, 10, cot_mujer=True, hijo_mujer=True, parcial=True, rp=0.03, agno_actual=2026) == (
+        _formula_hijo_invalido_anexo7(10, x=60, parcial=True, hijo_mujer=True, cot_mujer=True)
+    )
+
+
+def test_hijo_invalido_sin_edad_limite_y_tramos():
+    """El hijo invalido total no depende de la edad limite de 24 (un hijo de 30
+    tiene CNU positivo); el parcial vale 15% hasta los 24 y 11% despues."""
+    for h in (24, 30, 60):
+        assert cnu.cnu_hijo_invalido(65, h, rp=0.03, agno_actual=2026) > 0
+        assert cnu.cnu_sobrevivencia_hijo_invalido(h, rp=0.03, agno_actual=2026) > 0
+        # Con h >= 24 el parcial es el 11% de la misma anualidad: 11/15 del total.
+        assert cnu.cnu_hijo_invalido(65, h, parcial=True, rp=0.03, agno_actual=2026) == pytest.approx(
+            cnu.cnu_hijo_invalido(65, h, rp=0.03, agno_actual=2026) * 11 / 15, abs=1e-6
+        )
+        assert cnu.cnu_sobrevivencia_hijo_invalido(h, parcial=True, rp=0.03, agno_actual=2026) == pytest.approx(
+            cnu.cnu_sobrevivencia_hijo_invalido(h, rp=0.03, agno_actual=2026) * 11 / 15, abs=1e-6
+        )
+    # Con h < 24 el parcial esta entre el 11% y el 15% de la anualidad completa.
+    for h in (0, 10, 23):
+        total = cnu.cnu_sobrevivencia_hijo_invalido(h, rp=0.03, agno_actual=2026)
+        parcial = cnu.cnu_sobrevivencia_hijo_invalido(h, parcial=True, rp=0.03, agno_actual=2026)
+        assert total * 11 / 15 < parcial < total
+        total = cnu.cnu_hijo_invalido(65, h, rp=0.03, agno_actual=2026)
+        parcial = cnu.cnu_hijo_invalido(65, h, parcial=True, rp=0.03, agno_actual=2026)
+        assert total * 11 / 15 < parcial < total
+    # Decrece con la edad del hijo, sin llegar a 0; y condicionado al
+    # fallecimiento del afiliado es menor que el de sobrevivencia.
+    sob = [cnu.cnu_sobrevivencia_hijo_invalido(h, rp=0.03, agno_actual=2026) for h in range(0, 61, 5)]
+    vej = [cnu.cnu_hijo_invalido(65, h, rp=0.03, agno_actual=2026) for h in range(0, 61, 5)]
+    assert all(a > b > 0 for a, b in zip(sob, sob[1:]))
+    assert all(v < s for v, s in zip(vej, sob))
+    # Tabla de invalidos del sexo del hijo: distinta de la del hijo no invalido.
+    assert cnu.cnu_sobrevivencia_hijo_invalido(10, rp=0.03, agno_actual=2026) == cnu.cnu_sobrevivencia_hijo_invalido(
+        10, tabla_benef="mi2020", rp=0.03, agno_actual=2026
+    )
+    assert cnu.cnu_sobrevivencia_hijo_invalido(10, rp=0.03, agno_actual=2026) != cnu.cnu_sobrevivencia_hijo_invalido(
+        10, tabla_benef="cb2020", rp=0.03, agno_actual=2026
+    )
+    # Misma regla de tasa, tabla por fecha y edad actuarial que las funciones existentes.
+    with pytest.raises(ValueError, match="TITRP"):
+        cnu.cnu_hijo_invalido(65, 10, agno_actual=2026)
+    with pytest.raises(ValueError, match="TITRP"):
+        cnu.cnu_sobrevivencia_hijo_invalido(10, agno_actual=2026)
+    assert cnu.cnu_hijo_invalido(65, 10, fsiniestro=20130101, rp=0.03, agno_actual=2026) == cnu.cnu_hijo_invalido(
+        65, 10, tabla="rv2009", tabla_benef="mi2006", rp=0.03, agno_actual=2026
+    )
+    assert cnu.cnu_sobrevivencia_hijo_invalido(23.5, parcial=True, rp=0.03, agno_actual=2026) == (
+        cnu.cnu_sobrevivencia_hijo_invalido(24, parcial=True, rp=0.03, agno_actual=2026)
+    )
+    d = cnu.describir("hijo inválido parcial 15%/11%", "vigente", "vigente", rp=0.03, agno_actual=2026,
+                      benef_mujer=True, rol_benef=cnu.ROL_INVALIDO)
+    assert d == "CNU RP para hijo inválido parcial 15%/11% (tablas cb2020h mi2020m), tasa 3% en el año 2026"
+    for nombre in ("cnu_hijo_invalido", "cnu_sobrevivencia_hijo_invalido", "cnu_hijo_invalido_vec",
+                   "cnu_sobrevivencia_hijo_invalido_vec"):
+        assert nombre in cnu.__all__

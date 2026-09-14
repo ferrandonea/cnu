@@ -20,6 +20,9 @@ def test_ejemplos_actuales_tm2020():
     assert cnu.cnu_hijo(65, 10, rp=0.03, agno_actual=2026) == 0.135662
     assert cnu.cnu_hijo(65, 30, rp=0.03, agno_actual=2026) == 0.0
     assert cnu.cnu_sobrevivencia_hijo(10, mujer=True, rp=0.03, agno_actual=2026) == 1.720195
+    assert cnu.cnu_hijo_invalido(65, 30, rp=0.03, agno_actual=2026) == 1.257455
+    assert cnu.cnu_hijo_invalido(65, 21, hijo_mujer=True, parcial=True, rp=0.03, agno_actual=2026) == 1.259397
+    assert cnu.cnu_sobrevivencia_hijo_invalido(21, mujer=True, rp=0.03, agno_actual=2026) == 3.939510
     assert cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2026) == pytest.approx(0.037205, abs=1e-6)
     assert cnu.faj_afiliado(65, 62, rp=0.03, agno_vector=2013, agno_actual=2026) == pytest.approx(0.004659, abs=1e-6)
     p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, agno_actual=2026)
@@ -53,6 +56,9 @@ def test_vectorial_por_fsiniestro():
         cnu.cnu_afiliado(75, tabla="cb2020", rp=0.03, agno_actual=2026),
     ]
     np.testing.assert_allclose(v, esperado)
+    edades = np.array([55, 65, 75])
+    v = cnu.cnu_hijo_invalido_vec(edades, [3, 12, 25], parcial=[0, 1, 1], rp=0.03, agno_actual=2026)
+    assert (v > 0).all() and v[2] == cnu.cnu_hijo_invalido(75, 25, parcial=True, rp=0.03, agno_actual=2026)
 
 
 def test_selector_y_tabla_bidimensional():
@@ -87,6 +93,10 @@ def test_cli_ejemplo(capsys):
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "CNU RP para hijo no inválido 15% (tablas cb2020h cb2020h), tasa 3% en el año 2026"
     assert out[1].strip() == "0.135662"
+    assert main(["hijo-inv", "65", "30", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "CNU RP para hijo inválido total 15% (tablas cb2020h mi2020h), tasa 3% en el año 2026"
+    assert out[1].strip() == "1.257455"
 
 
 def test_estado_normativo_y_edad_actuarial():
