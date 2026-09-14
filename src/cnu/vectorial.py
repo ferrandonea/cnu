@@ -1,11 +1,12 @@
 """Versiones vectoriales de las formulas de CNU (una observacion por fila).
 
 Equivalen a los comandos ``cnu_afil``, ``cnu_cnyg_s_h`` y ``cnu_sobr_cnyg_s_h``
-de Stata: cada argumento puede ser un escalar (se aplica a todas las filas) o
-un arreglo de largo ``N``. Las filas que no se pueden calcular (edad fuera de
-[20, 110], sin tasa determinable, vector de tasas inexistente, o excluidas con
-``incluir``) quedan en ``nan`` y se emite un :class:`AdvertenciaCNU` con el
-detalle.
+de Stata (mas las del hijo no invalido, sin comando equivalente): cada
+argumento puede ser un escalar (se aplica a todas las filas) o un arreglo de
+largo ``N``. Las filas que no se pueden calcular (edad fuera de [20, 110], o
+negativa en el caso de los hijos; sin tasa determinable; vector de tasas
+inexistente; o excluidas con ``incluir``) quedan en ``nan`` y se emite un
+:class:`AdvertenciaCNU` con el detalle.
 
 La tasa de descuento se resuelve fila a fila con la misma regla que las
 funciones escalares (:func:`cnu.core.tasas_por_periodo`): ``rv`` o ``rp`` de
@@ -30,7 +31,7 @@ from collections.abc import Callable
 import numpy as np
 
 from . import core
-from .core import AGNO_VECTOR, EDAD_MAXIMA, EDAD_MINIMA, TABLA_AFILIADO, TABLA_BENEFICIARIO
+from .core import AGNO_VECTOR, EDAD_MAXIMA, EDAD_MINIMA, EDAD_MINIMA_HIJO, TABLA_AFILIADO, TABLA_BENEFICIARIO
 from .tablas import existe_vector_tasas
 
 MAX_LISTADO = 20
@@ -277,6 +278,120 @@ def cnu_sobrevivencia_conyuge_vec(
     return cnu
 
 
+MENSAJES_TASA = {
+    "sin_tasa": "Las siguientes observaciones quedan sin tasa: desde 2014 se requiere rp"
+                " (o rv, agno_vector o fsiniestro anterior a 2014)",
+    "vector": "Para las siguientes observaciones se intentó utilizar un vector inexistente",
+}
+
+
+def cnu_hijo_vec(
+    x,
+    h,
+    cot_mujer=False,
+    hijo_mujer=False,
+    tabla=TABLA_AFILIADO,
+    tabla_benef=TABLA_BENEFICIARIO,
+    agno_vector=AGNO_VECTOR,
+    agno_actual=None,
+    rv=None,
+    rp=None,
+    fsiniestro=0,
+    incluir=None,
+    dir_tablas=None,
+    dir_vectores=None,
+) -> np.ndarray:
+    """CNU de hijo no invalido (pension de vejez o invalidez) para varias
+    observaciones; vease :func:`cnu.core.cnu_hijo`.
+
+    La edad del afiliado ``x`` debe estar en [20, 110] y la del hijo ``h`` no
+    puede ser negativa (desde 0 agnos; con 24 o mas el CNU es 0). ``tabla``
+    (rol afiliado, sexo ``cot_mujer``) y ``tabla_benef`` (rol beneficiario,
+    sexo ``hijo_mujer``), por defecto ``"vigente"``, se resuelven por fila.
+    """
+    x = np.atleast_1d(np.asarray(x, dtype=float))
+    n = len(x)
+    h = _columna(h, n)
+    a = _preparar(n, cot_mujer=cot_mujer, hijo_mujer=hijo_mujer, tabla=tabla, tabla_benef=tabla_benef,
+                  agno_vector=agno_vector, agno_actual=agno_actual, rv=rv, rp=rp,
+                  fsiniestro=fsiniestro, incluir=incluir)
+    cnu = np.full(n, np.nan)
+    errores: dict[str, list[int]] = {
+        "menor_20_cot": [], "mayor_110_cot": [], "negativa_hijo": [], "sin_tasa": [], "vector": [],
+    }
+    for j in range(n):
+        if not a["incluir"][j] or math.isnan(x[j]) or math.isnan(h[j]):
+            continue
+        ex, eh = core.edad_entera(x[j]), core.edad_entera(h[j])
+        rv_j, rp_j = _opcional(a["rv"][j]), _opcional(a["rp"][j])
+        if ex < EDAD_MINIMA:
+            errores["menor_20_cot"].append(j)
+        elif ex > EDAD_MAXIMA:
+            errores["mayor_110_cot"].append(j)
+        elif eh < EDAD_MINIMA_HIJO:
+            errores["negativa_hijo"].append(j)
+        elif (motivo := _motivo_sin_tasa(a, j, rv_j, rp_j, dir_vectores)) is not None:
+            errores[motivo].append(j)
+        else:
+            cnu[j] = core.cnu_hijo(
+                ex, eh, bool(a["cot_mujer"][j]), bool(a["hijo_mujer"][j]), a["tabla"][j], a["tabla_benef"][j],
+                _entero_o_nan(a["agno_vector"][j]), _entero_o_nan(a["agno_actual"][j]), rv_j, rp_j,
+                int(a["fsiniestro"][j]), False, dir_tablas, dir_vectores,
+            )
+    _advertir(errores, {
+        "menor_20_cot": "Los siguientes cotizantes tienen menos de 20 años",
+        "mayor_110_cot": "Los siguientes cotizantes tienen más de 110 años",
+        "negativa_hijo": "Los siguientes hijos tienen edad negativa",
+        **MENSAJES_TASA,
+    })
+    return cnu
+
+
+def cnu_sobrevivencia_hijo_vec(
+    h,
+    mujer=False,
+    tabla_benef=TABLA_BENEFICIARIO,
+    agno_vector=AGNO_VECTOR,
+    agno_actual=None,
+    rv=None,
+    rp=None,
+    fsiniestro=0,
+    incluir=None,
+    dir_tablas=None,
+    dir_vectores=None,
+) -> np.ndarray:
+    """CNU de sobrevivencia para hijo no invalido, varias observaciones;
+    vease :func:`cnu.core.cnu_sobrevivencia_hijo`.
+
+    La edad del hijo ``h`` no puede ser negativa (desde 0 agnos; con 24 o mas
+    el CNU es 0). ``tabla_benef`` (rol beneficiario, sexo ``mujer``; por
+    defecto ``"vigente"``) se resuelve por fila con la fecha de esa fila.
+    """
+    h = np.atleast_1d(np.asarray(h, dtype=float))
+    n = len(h)
+    a = _preparar(n, mujer=mujer, tabla_benef=tabla_benef, agno_vector=agno_vector, agno_actual=agno_actual,
+                  rv=rv, rp=rp, fsiniestro=fsiniestro, incluir=incluir)
+    cnu = np.full(n, np.nan)
+    errores: dict[str, list[int]] = {"negativa_hijo": [], "sin_tasa": [], "vector": []}
+    for j in range(n):
+        if not a["incluir"][j] or math.isnan(h[j]):
+            continue
+        edad = core.edad_entera(h[j])
+        rv_j, rp_j = _opcional(a["rv"][j]), _opcional(a["rp"][j])
+        if edad < EDAD_MINIMA_HIJO:
+            errores["negativa_hijo"].append(j)
+        elif (motivo := _motivo_sin_tasa(a, j, rv_j, rp_j, dir_vectores)) is not None:
+            errores[motivo].append(j)
+        else:
+            cnu[j] = core.cnu_sobrevivencia_hijo(
+                edad, bool(a["mujer"][j]), a["tabla_benef"][j], _entero_o_nan(a["agno_vector"][j]),
+                _entero_o_nan(a["agno_actual"][j]), rv_j, rp_j, int(a["fsiniestro"][j]),
+                False, dir_tablas, dir_vectores,
+            )
+    _advertir(errores, {"negativa_hijo": "Los siguientes hijos tienen edad negativa", **MENSAJES_TASA})
+    return cnu
+
+
 def _preparar(n: int, **kw) -> dict[str, np.ndarray]:
     """Expande todos los argumentos a columnas de largo ``n``."""
     out = {}
@@ -285,7 +400,7 @@ def _preparar(n: int, **kw) -> dict[str, np.ndarray]:
             out[k] = _columna(v, n, dtype=object)
         elif k == "incluir":
             out[k] = np.ones(n, dtype=bool) if v is None else _columna(v, n, dtype=bool)
-        elif k in ("mujer", "cot_mujer", "cony_mujer"):
+        elif k in ("mujer", "cot_mujer", "cony_mujer", "hijo_mujer"):
             out[k] = _columna(v, n, dtype=bool)
         else:
             out[k] = _columna(v, n)
@@ -296,5 +411,7 @@ __all__: list[str] = [
     "AdvertenciaCNU",
     "cnu_afiliado_vec",
     "cnu_conyuge_vec",
+    "cnu_hijo_vec",
     "cnu_sobrevivencia_conyuge_vec",
+    "cnu_sobrevivencia_hijo_vec",
 ]

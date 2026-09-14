@@ -118,3 +118,31 @@ def test_ayuda_sin_defaults_de_tasa():
     for ayuda in ayudas:
         assert "2013" not in ayuda
         assert "0.03" not in ayuda
+
+
+def test_hijo(capsys):
+    assert main(["hijo", "65", "10", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == "CNU RP para hijo no inválido 15% (tablas cb2020h cb2020h), tasa 3% en el año 2026"
+    assert lineas[-1].strip() == "0.135662"
+    assert main(["hijo", "65", "21", "--hijo-mujer", "--pasos", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    out = capsys.readouterr().out
+    assert "hijo no inválido 15% (tablas cb2020h b2020m)" in out and "t =   1:" in out and "ajuste" in out
+    assert out.strip().splitlines()[-1].strip() == "0.005165"
+    assert main(["hijo", "65", "30", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    assert capsys.readouterr().out.strip().splitlines()[-1].strip() == "0.000000"
+
+
+def test_sobrev_hijo(capsys):
+    assert main(["sobrev-hijo", "21", "--mujer", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == "CNU RP para sobrevivencia de hijo no inválido 15% (tabla b2020m), tasa 3% en el año 2026"
+    assert lineas[-1].strip() == "0.431006"
+    assert main(["sobrev-hijo", "10.6", "--pasos", "--fsiniestro", "20131231"]) == 0
+    out = capsys.readouterr().out
+    assert "vector 2013" in out.splitlines()[0] and "hijo 10.6 -> 11" in out.splitlines()[0]
+    assert "tabla b2006h" in out and "ajuste" in out
+    for argv in (["hijo", "65", "10", "--agno-actual", "2026"], ["sobrev-hijo", "10", "--agno-actual", "2026"]):
+        assert main(argv) == CODIGO_ERROR_TASA
+        out, err = capsys.readouterr()
+        assert out == "" and "TITRP" in err

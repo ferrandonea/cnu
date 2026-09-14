@@ -17,6 +17,9 @@ def test_ejemplos_actuales_tm2020():
     assert cnu.cnu_afiliado(65, agno_vector=2013, agno_actual=2026) == 14.042741
     assert cnu.cnu_conyuge(65, 63, cony_mujer=True, rp=0.03, agno_actual=2026) == 2.493278
     assert cnu.cnu_sobrevivencia_conyuge(63, mujer=True, rp=0.03, agno_actual=2026) == 10.674379
+    assert cnu.cnu_hijo(65, 10, rp=0.03, agno_actual=2026) == 0.135662
+    assert cnu.cnu_hijo(65, 30, rp=0.03, agno_actual=2026) == 0.0
+    assert cnu.cnu_sobrevivencia_hijo(10, mujer=True, rp=0.03, agno_actual=2026) == 1.720195
     assert cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2026) == pytest.approx(0.037205, abs=1e-6)
     assert cnu.faj_afiliado(65, 62, rp=0.03, agno_vector=2013, agno_actual=2026) == pytest.approx(0.004659, abs=1e-6)
     p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, agno_actual=2026)
@@ -80,6 +83,10 @@ def test_cli_ejemplo(capsys):
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "CNU RP para soltero sin hijos (tabla cb2020h), tasa 3% en el año 2026"
     assert out[1].strip() == "15.456439"
+    assert main(["hijo", "65", "10", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "CNU RP para hijo no inválido 15% (tablas cb2020h cb2020h), tasa 3% en el año 2026"
+    assert out[1].strip() == "0.135662"
 
 
 def test_estado_normativo_y_edad_actuarial():

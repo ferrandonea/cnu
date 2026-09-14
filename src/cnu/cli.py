@@ -71,6 +71,20 @@ def construir_parser() -> argparse.ArgumentParser:
     _opciones_comunes(p, benef=True, afil=False)
     _opciones_tasa(p)
 
+    p = sub.add_parser("hijo", help="CNU para hijo no inválido, 15%% (pensión de vejez o invalidez)")
+    p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("h", type=float, help="edad del hijo, desde 0 (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
+    p.add_argument("--hijo-mujer", action="store_true", help="el hijo es mujer (por defecto, hombre)")
+    _opciones_comunes(p, benef=True)
+    _opciones_tasa(p)
+
+    p = sub.add_parser("sobrev-hijo", help="CNU de sobrevivencia para hijo no inválido, 15%%")
+    p.add_argument("h", type=float, help="edad del hijo, desde 0 (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("--mujer", action="store_true", help="el hijo es mujer (por defecto, hombre)")
+    _opciones_comunes(p, benef=True, afil=False)
+    _opciones_tasa(p)
+
     p = sub.add_parser("faj", help="Factor de Ajuste (cnu_faji); derogado desde el 1-2-2022 (Ley 21.419)")
     p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
     p.add_argument("y", type=float, nargs="?", default=None,
@@ -183,6 +197,22 @@ def _ejecutar(args) -> int:
               + _nota_edades(conyuge=args.y))
         v = core.cnu_sobrevivencia_conyuge(args.y, args.mujer, args.tabla_benef, rv=args.rv, rp=args.rp,
                                            pasos=args.pasos, **comunes)
+        print(f"{v:9.6f}")
+    elif c == "hijo":
+        print(core.describir("hijo no inválido 15%", args.tabla, args.tabla_benef, args.agno_vector,
+                             args.agno_actual, args.rv, args.rp, args.fsiniestro,
+                             mujer=args.cot_mujer, benef_mujer=args.hijo_mujer, dir_tablas=args.dir_tablas)
+              + _nota_edades(afiliado=args.x, hijo=args.h))
+        v = core.cnu_hijo(args.x, args.h, args.cot_mujer, args.hijo_mujer, args.tabla, args.tabla_benef,
+                          rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
+        print(f"{v:9.6f}")
+    elif c == "sobrev-hijo":
+        print(core.describir("sobrevivencia de hijo no inválido 15%", None, args.tabla_benef, args.agno_vector,
+                             args.agno_actual, args.rv, args.rp, args.fsiniestro,
+                             benef_mujer=args.mujer, dir_tablas=args.dir_tablas)
+              + _nota_edades(hijo=args.h))
+        v = core.cnu_sobrevivencia_hijo(args.h, args.mujer, args.tabla_benef, rv=args.rv, rp=args.rp,
+                                        pasos=args.pasos, **comunes)
         print(f"{v:9.6f}")
     elif c == "faj":
         rp = _nan_a_none(args.rp)

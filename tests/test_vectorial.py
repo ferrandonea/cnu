@@ -101,3 +101,26 @@ def test_sin_tasa_y_vector_inexistente_se_distinguen():
     assert "(1) Las siguientes observaciones quedan sin tasa" in msg and "(1): 0\n" in msg
     assert "(2) Para las siguientes observaciones se intentó utilizar un vector inexistente (1): 1" in msg
     assert np.isnan(v[0]) and np.isnan(v[1]) and not np.isnan(v[2])
+
+
+def test_hijo_vec_coincide_con_escalar():
+    x, h, mujer = [65, 60, 65], [10, 21, 30], [False, True, False]
+    v = cnu.cnu_hijo_vec(x, h, cot_mujer=[False, True, False], hijo_mujer=mujer, rp=0.03, agno_actual=2026)
+    e = [cnu.cnu_hijo(a, b, c, m, rp=0.03, agno_actual=2026) for a, b, c, m in zip(x, h, [False, True, False], mujer)]
+    np.testing.assert_allclose(v, e)
+    assert v[2] == 0.0
+    v = cnu.cnu_sobrevivencia_hijo_vec(h, mujer=mujer, rp=[0.03, np.nan, 0.03], fsiniestro=[0, 20130101, 0], agno_actual=2026)
+    e = [cnu.cnu_sobrevivencia_hijo(10, rp=0.03, agno_actual=2026),
+         cnu.cnu_sobrevivencia_hijo(21, mujer=True, fsiniestro=20130101, agno_actual=2026), 0.0]
+    np.testing.assert_allclose(v, e)
+
+
+def test_hijo_vec_filas_invalidas():
+    with pytest.warns(cnu.AdvertenciaCNU, match="hijos tienen edad negativa") as w:
+        v = cnu.cnu_hijo_vec([65, 19, 65, 65], [-1, 10, 10, 10], rp=[0.03, 0.03, np.nan, 0.03],
+                             agno_actual=2026, incluir=[True, True, True, False])
+    assert "cotizantes tienen menos de 20" in str(w[0].message) and "sin tasa" in str(w[0].message)
+    assert np.isnan(v).all()
+    with pytest.warns(cnu.AdvertenciaCNU, match="edad negativa"):
+        v = cnu.cnu_sobrevivencia_hijo_vec([-1, 0, np.nan], rp=0.03, agno_actual=2026)
+    assert np.isnan(v[0]) and v[1] > 0 and np.isnan(v[2])

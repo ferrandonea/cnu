@@ -2,10 +2,13 @@
 
 Equivalentes a las rutinas Mata ``cnu_2_1`` (afiliado), ``cnu_2_2`` (conyuge
 sin hijos) y ``cnu_1_1`` (sobrevivencia para conyuge sin hijos), segun el
-Anexo N 7 del Compendio de Normas de la Superintendencia de Pensiones. Las
-tres se calculan sobre el nucleo comun :func:`anualidad`, que admite las
-variantes del Anexo (limite de periodos, condicion de fallecimiento del
-afiliado y porcentaje del articulo 58 del D.L. N 3.500).
+Anexo N 7 del Compendio de Normas de la Superintendencia de Pensiones, mas
+las formulas del hijo no invalido (:func:`cnu_hijo`, letra e del punto 2, y
+:func:`cnu_sobrevivencia_hijo`, letra d del punto 1), que no tienen rutina
+Mata. Todas se calculan sobre el nucleo comun :func:`anualidad`, que admite
+las variantes del Anexo (limite de periodos, condicion de fallecimiento del
+afiliado, ajuste temporal por pago mensual y porcentaje del articulo 58 del
+D.L. N 3.500).
 
 Seleccion de la tasa de descuento (ver :func:`tasas_por_periodo`):
 
@@ -39,6 +42,8 @@ from .tablas import (
 
 EDAD_MINIMA = 20
 EDAD_MAXIMA = 110
+EDAD_MINIMA_HIJO = 0  # los hijos se calculan desde los 0 agnos
+EDAD_LIMITE_HIJO = 24  # ``z`` del Anexo N 7: edad limite de los hijos no invalidos
 AJUSTE_MENSUAL = 11 / 24  # descuento por pago mensual (11/24 de una anualidad)
 
 # Porcentajes de pension de sobrevivencia del articulo 58 del D.L. N 3.500
@@ -310,6 +315,7 @@ def anualidad(
     x: int | None = None,
     pasos: bool = False,
     encabezado: str = "",
+    temporal: bool = False,
 ) -> float:
     """Nucleo comun de las anualidades del Anexo N 7.
 
@@ -339,16 +345,28 @@ def anualidad(
     :param porcentaje: fraccion del articulo 58 que se aplica al resultado
         (:data:`FRACCION_CONYUGE`, :data:`FRACCION_HIJO`, ...).
     :param ajuste: descuento por pago mensual (:data:`AJUSTE_MENSUAL`); el
-        Anexo lo aplica a las anualidades no condicionadas y no a las
-        condicionadas al fallecimiento del afiliado (se pasa ``0``).
+        Anexo lo aplica a las anualidades vitalicias no condicionadas y no a
+        las vitalicias condicionadas al fallecimiento del afiliado (se pasa
+        ``0``).
+    :param temporal: anualidad temporal (hijos): el ajuste se aplica con la
+        correccion del Anexo para ``N = periodos + 1`` periodos (``N = z - h``),
+        con ``v_N = 1 / (1 + i_N)^N``::
+
+            no condicionada:  ajuste * (1 - v_N * l_N)
+            condicionada:     ajuste * ((1 - v_N * l_N) - (1 - v_N * l_N * l^x_N))
+                            = -ajuste * v_N * l_N * (1 - l^x_N)
+
+        es decir, la anualidad condicionada es la diferencia entre la del
+        hijo y la conjunta hijo-afiliado, cada una con su propio ajuste.
     :param pasos: imprime ``encabezado`` (la tabla resuelta) y el calculo
         periodo a periodo.
     :return: valor redondeado a seis decimales.
     """
     condicionada = qx_afiliado is not None
-    qx = _qx_hasta(qx, edad + periodos - 1)
+    ultimo = edad + periodos - 1 + (1 if temporal else 0)
+    qx = _qx_hasta(qx, ultimo)
     if condicionada:
-        qx_afiliado = _qx_hasta(qx_afiliado, x + periodos - 1)
+        qx_afiliado = _qx_hasta(qx_afiliado, x - edad + ultimo)
     # Termino t = 0: l_0 = 1 y, si esta condicionada, c_0 = 1 - l^x_0 = 0.
     cnu = 0.0 if condicionada else 1.0
     lt = 1.0  # l_t de la persona
@@ -369,6 +387,19 @@ def anualidad(
         elif pasos:
             print(f"t = {t:3d}: cnu = {cnu:9.6f} + {lt:g}/((1 + {i:g})^{t})")
         cnu += termino
+    if temporal:
+        n = periodos + 1
+        i = tasas[n - 1]
+        vl = lt * (1.0 - qx[edad + n - 1]) / (1.0 + i) ** n  # v_N * l_N
+        if condicionada:
+            lxn = lxt * (1.0 - qx_afiliado[x + n - 1])
+            if pasos:
+                print(f"t = {n:3d}: ajuste = -11/24*({vl:g})*(1 - {lxn:g})")
+            ajuste = -ajuste * vl * (1.0 - lxn)
+        else:
+            if pasos:
+                print(f"t = {n:3d}: ajuste = 11/24*(1 - {vl:g})")
+            ajuste = ajuste * (1.0 - vl)
     return _redondear(porcentaje * (cnu - ajuste))
 
 
@@ -493,6 +524,132 @@ def cnu_sobrevivencia_conyuge(
     # 60% de la anualidad vitalicia del conyuge menos el ajuste por pago mensual.
     return anualidad(qx, y, tasas, EDAD_MAXIMA - y, FRACCION_CONYUGE, pasos=pasos,
                      encabezado=f"tabla {_etiqueta_tabla(tm)}")
+
+
+def cnu_hijo(
+    x: int,
+    h: int,
+    cot_mujer: bool = False,
+    hijo_mujer: bool = False,
+    tabla: str = TABLA_AFILIADO,
+    tabla_benef: str = TABLA_BENEFICIARIO,
+    agno_vector: int | None = AGNO_VECTOR,
+    agno_actual: int | None = None,
+    rv: float | None = None,
+    rp: float | None = None,
+    fsiniestro: int = 0,
+    pasos: bool = False,
+    dir_tablas=None,
+    dir_vectores=None,
+) -> float:
+    """CNU de un hijo no invalido de un afiliado pensionado por vejez o
+    invalidez (letra e del punto 2 del Anexo N 7: hijos no invalidos y
+    causante con conyuge, o hijos no invalidos con madre o padre con derecho
+    a pension). Sin rutina Mata equivalente.
+
+    Con ``z = 24`` (:data:`EDAD_LIMITE_HIJO`), ``l`` los supervivientes de
+    cada tabla e ``i_t`` la tasa del periodo ``t``, el Anexo define::
+
+        cnu = 0,15 * [ sum_{t=0}^{23-h} l_{h+t} / (l_h (1+i_t)^t)
+                       - sum_{t=0}^{23-h} l_{h+t} l_{x+t} / (l_h l_x (1+i_t)^t)
+                       - 11/24 * 1/(1+i_{24-h})^{24-h}
+                         * ( l_{x+24-h} l_24 / (l_x l_h) - l_24 / l_h ) ]
+
+    Es la anualidad temporal del hijo hasta la edad limite, pagadera solo
+    si el afiliado ha fallecido (``1 - l^x_t``), con el ajuste por pago
+    mensual de una anualidad temporal, al 15% del articulo 58 del D.L.
+    N 3.500 (:data:`FRACCION_HIJO`). Con ``h >= 24`` no hay periodos y el
+    CNU es 0. El resultado se suma al de :func:`cnu_afiliado` (y al del
+    conyuge, si lo hay) para obtener el CNU total.
+
+    No cubre la letra g del punto 2 (hijos sin conyuge ni madre o padre con
+    derecho a pension), cuyo porcentaje es ``0,15 + 0,5/n``.
+
+    :param x: edad del afiliado.
+    :param h: edad del hijo (desde 0 agnos).
+    :param cot_mujer: ``True`` si el afiliado es mujer.
+    :param hijo_mujer: ``True`` si el hijo es mujer.
+    :param tabla: tabla del afiliado (p.ej. ``"rv2009"``; por defecto ``"vigente"``).
+    :param tabla_benef: tabla del hijo, con rol de beneficiario (p.ej.
+        ``"b2006"``; por defecto ``"vigente"``).
+
+    La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
+    como en :func:`cnu_afiliado`.
+    """
+    x, h = edad_entera(x), edad_entera(h)
+    agno_actual = _agno(agno_actual)
+    tm_cot = tabla_mortalidad(tabla, ROL_AFILIADO, cot_mujer, fsiniestro, agno_actual, dir_tablas)
+    tm_hijo = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, hijo_mujer, fsiniestro, agno_actual, dir_tablas)
+    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores, fsiniestro)
+    encabezado = f"tablas {_etiqueta_tabla(tm_cot)} {_etiqueta_tabla(tm_hijo)}"
+    if h >= EDAD_LIMITE_HIJO:
+        if pasos:
+            print(encabezado)
+            print(f"hijo de {h} agnos: sin derecho desde los {EDAD_LIMITE_HIJO}, CNU = 0")
+        return 0.0
+    # 15% de la anualidad temporal del hijo (t = 0..23-h) condicionada al
+    # fallecimiento del afiliado, con el ajuste 11/24 temporal del Anexo.
+    return anualidad(
+        tm_hijo.qx_mejorado(agno_actual, h), h, tasas, EDAD_LIMITE_HIJO - 1 - h, FRACCION_HIJO,
+        AJUSTE_MENSUAL, tm_cot.qx_mejorado(agno_actual, x), x,
+        pasos=pasos, encabezado=encabezado, temporal=True,
+    )
+
+
+def cnu_sobrevivencia_hijo(
+    h: int,
+    mujer: bool = False,
+    tabla_benef: str = TABLA_BENEFICIARIO,
+    agno_vector: int | None = AGNO_VECTOR,
+    agno_actual: int | None = None,
+    rv: float | None = None,
+    rp: float | None = None,
+    fsiniestro: int = 0,
+    pasos: bool = False,
+    dir_tablas=None,
+    dir_vectores=None,
+) -> float:
+    """CNU de pension de sobrevivencia para un hijo no invalido (letra d del
+    punto 1 del Anexo N 7: hijos no invalidos y causante con conyuge, o
+    hijos no invalidos con madre o padre con derecho a pension). Sin rutina
+    Mata equivalente.
+
+    Con ``z = 24`` (:data:`EDAD_LIMITE_HIJO`), el Anexo define::
+
+        cnu = 0,15 * [ sum_{t=0}^{23-h} l_{h+t} / (l_h (1+i_t)^t)
+                       - 11/24 * ( 1 - l_24 / (l_h (1+i_{24-h})^{24-h}) ) ]
+
+    Es la anualidad temporal del hijo hasta la edad limite, con el ajuste
+    por pago mensual de una anualidad temporal, al 15% del articulo 58 del
+    D.L. N 3.500 (:data:`FRACCION_HIJO`). Con ``h >= 24`` el CNU es 0.
+
+    No cubre la letra f del punto 1 (hijos sin conyuge ni madre o padre con
+    derecho a pension, porcentaje ``0,15 + 0,5/n``) ni la regla del grupo
+    familiar compuesto por un solo hijo de 23 o mas agnos (meses que le
+    restan para cumplir 24).
+
+    :param h: edad del hijo (desde 0 agnos).
+    :param mujer: ``True`` si el hijo es mujer.
+    :param tabla_benef: tabla de mortalidad del hijo, con rol de
+        beneficiario (p.ej. ``"b2006"``; por defecto ``"vigente"``).
+
+    La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
+    como en :func:`cnu_afiliado`.
+    """
+    h = edad_entera(h)
+    agno_actual = _agno(agno_actual)
+    tm = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, mujer, fsiniestro, agno_actual, dir_tablas)
+    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores, fsiniestro)
+    encabezado = f"tabla {_etiqueta_tabla(tm)}"
+    if h >= EDAD_LIMITE_HIJO:
+        if pasos:
+            print(encabezado)
+            print(f"hijo de {h} agnos: sin derecho desde los {EDAD_LIMITE_HIJO}, CNU = 0")
+        return 0.0
+    # 15% de la anualidad temporal del hijo (t = 0..23-h) menos el ajuste
+    # 11/24 temporal del Anexo.
+    return anualidad(tm.qx_mejorado(agno_actual, h), h, tasas, EDAD_LIMITE_HIJO - 1 - h, FRACCION_HIJO,
+                     pasos=pasos, encabezado=encabezado, temporal=True)
 
 
 def describir(
