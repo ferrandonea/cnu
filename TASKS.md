@@ -9,10 +9,10 @@ Repo: `ferrandonea/cnu` (fork; `upstream` = `gvegayon/cnu`). Tests: `UV_CACHE_DI
 - [x] #2 Prefactor: punto único de resolución de tabla de mortalidad en el núcleo — completado
 - [x] #3 Cargar, guardar y listar las TM2020 (factores de mejoramiento bidimensionales) — completado
 - [x] #4 Mejoramiento bidimensional TM2020 y CNU con tabla 2020 explícita — completado
-- [ ] #5 Selección de tabla por fecha de siniestro con todas las vigencias (1985–2020) — pendiente (bloqueado por #2, #4)
+- [x] #5 Selección de tabla por fecha de siniestro con todas las vigencias (1985–2020) — completado
 - [ ] #6 Default `"vigente"` con convención de fin de año en CNU, FAJ, proyecciones, vectoriales y CLI — pendiente (bloqueado por #5)
 - [ ] #7 README y docstrings: tablas 2014/2020, vigencias y default vigente — pendiente (bloqueado por #6)
 
-Frontera actual: #5 (bloqueado por #2 y #4, ambos completados).
+Frontera actual: #6 (bloqueado solo por #5, ya completado).
 
 Este archivo es efímero: se elimina con `/close-prd 1`.
