@@ -6,7 +6,7 @@ Repo: `ferrandonea/cnu` (fork; `upstream` = `gvegayon/cnu`). Tests: `UV_CACHE_DI
 
 ## Tareas (orden por dependencia)
 
-- [ ] #2 Prefactor: punto único de resolución de tabla de mortalidad en el núcleo — pendiente (sin bloqueos)
+- [x] #2 Prefactor: punto único de resolución de tabla de mortalidad en el núcleo — completado
 - [ ] #3 Cargar, guardar y listar las TM2020 (factores de mejoramiento bidimensionales) — pendiente (sin bloqueos)
 - [ ] #4 Mejoramiento bidimensional TM2020 y CNU con tabla 2020 explícita — pendiente (bloqueado por #3)
 - [ ] #5 Selección de tabla por fecha de siniestro con todas las vigencias (1985–2020) — pendiente (bloqueado por #2, #4)
