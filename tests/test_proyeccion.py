@@ -81,7 +81,7 @@ def test_proyeccion_sin_tasa_es_error():
         warnings.simplefilter("error")
         r = cnu.proyectar_pension(65, rp=0.0345, agno_actual=2026)
     assert r.pension.shape == (46,) and not np.isnan(r.pension).any()
-    assert "tasa 0.0345" in r.descripcion
+    assert "tasa 3.45%" in r.descripcion
 
 
 def test_faj_historico_con_vector_explicito():

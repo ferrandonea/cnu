@@ -196,7 +196,7 @@ def proyectar_pension(
 
     quien = "afiliado soltero" if y is None else "afiliado con conyuge"
     tablas = tabla if y is None else f"{tabla} {tabla_benef}"
-    tasa = f"vector {core.agno_vector_efectivo(agno_vector, fsiniestro)}" if rp is None else f"tasa {rp:g}"
+    tasa = f"vector {core.agno_vector_efectivo(agno_vector, fsiniestro)}" if rp is None else f"tasa {rp * 100:g}%"
     sufijo = " con FAJ" if faj else ""
     descripcion = f"Trayectoria de pension{sufijo} para {quien} (tabla {tablas}) {tasa} en {agno_actual}."
 

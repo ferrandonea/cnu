@@ -16,10 +16,12 @@ def _opciones_comunes(p: argparse.ArgumentParser, benef: bool, afil: bool = True
     if benef:
         p.add_argument("--tabla-benef", default=core.TABLA_BENEFICIARIO,
                        help="tabla del beneficiario (p.ej. b2006, b2020; por defecto: %(default)s)")
-    p.add_argument("--agno-vector", type=int, default=core.AGNO_VECTOR, help="año del vector de tasas")
+    p.add_argument("--agno-vector", type=int, default=core.AGNO_VECTOR,
+                   help="año del vector de tasas de retiro programado (sin tasa por defecto: ver --rp)")
     p.add_argument("--agno-actual", type=int, default=None,
                    help="año de cálculo (por defecto, el actual); la tabla vigente es la del 31 de diciembre")
-    p.add_argument("--fsiniestro", type=int, default=0, help="fecha del siniestro YYYYMMDD (asigna la tabla)")
+    p.add_argument("--fsiniestro", type=int, default=0,
+                   help="fecha del siniestro YYYYMMDD (asigna la tabla; anterior a 2014, el vector de tasas de su año)")
     p.add_argument("--dir-tablas", default=None, help="directorio con tablas de mortalidad propias")
     p.add_argument("--dir-vectores", default=None, help="directorio con vectores de tasas propios")
 
@@ -27,7 +29,7 @@ def _opciones_comunes(p: argparse.ArgumentParser, benef: bool, afil: bool = True
 def _opciones_tasa(p: argparse.ArgumentParser) -> None:
     g = p.add_mutually_exclusive_group()
     g.add_argument("--rv", type=float, default=None, help="tasa de renta vitalicia")
-    g.add_argument("--rp", type=float, default=None, help="tasa única de retiro programado")
+    g.add_argument("--rp", type=float, default=None, help="tasa única de retiro programado (TITRP)")
     p.add_argument("--pasos", action="store_true", help="imprime el cálculo periodo a periodo")
 
 
@@ -73,7 +75,7 @@ def construir_parser() -> argparse.ArgumentParser:
     p.add_argument("y", type=int, nargs="?", default=None, help="edad del cónyuge (opcional)")
     p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
     p.add_argument("--cony-hombre", action="store_true", help="el cónyuge es hombre (por defecto, mujer)")
-    p.add_argument("--rp", type=float, default=0.03, help="tasa de retiro programado (nan = usar vector)")
+    p.add_argument("--rp", type=float, default=None, help="tasa única de retiro programado (TITRP)")
     _opciones_comunes(p, benef=True)
     _opciones_faj(p)
 
@@ -82,7 +84,7 @@ def construir_parser() -> argparse.ArgumentParser:
     p.add_argument("y", type=int, nargs="?", default=None, help="edad del cónyuge (opcional)")
     p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
     p.add_argument("--cony-hombre", action="store_true", help="el cónyuge es hombre (por defecto, mujer)")
-    p.add_argument("--rp", type=float, default=0.03, help="tasa de retiro programado (nan = usar vector)")
+    p.add_argument("--rp", type=float, default=None, help="tasa única de retiro programado (TITRP)")
     p.add_argument("--faj", action="store_true", help="incluye Factor de Ajuste")
     p.add_argument("--csv", action="store_true", help="imprime el resultado como CSV")
     _opciones_comunes(p, benef=True)
@@ -96,8 +98,32 @@ def _nan_a_none(v):
     return None if v is None or v != v else v
 
 
+def _etiqueta_tasa(rv, rp, agno_vector, fsiniestro) -> str:
+    """Tasa efectiva para la primera linea de salida (``tasa 3.45%`` o ``vector 2013``)."""
+    if rv is not None:
+        return f"tasa {rv * 100:g}%"
+    if rp is not None:
+        return f"tasa {rp * 100:g}%"
+    return f"vector {core.agno_vector_efectivo(agno_vector, fsiniestro)}"
+
+
+CODIGO_ERROR_TASA = 2
+
+
 def main(argv: list[str] | None = None) -> int:
+    """Ejecuta la CLI. Sin tasa determinable (o con vector inexistente) escribe
+    el mensaje de la API en stderr y devuelve :data:`CODIGO_ERROR_TASA`."""
     args = construir_parser().parse_args(argv)
+    try:
+        return _ejecutar(args)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"cnu {args.comando}: error: {e}", file=sys.stderr)
+        print("Entregue la tasa con --rp (TITRP), --rv o --agno-vector, o un --fsiniestro anterior a 2014.",
+              file=sys.stderr)
+        return CODIGO_ERROR_TASA
+
+
+def _ejecutar(args) -> int:
     c = args.comando
     if c == "tablas":
         print("Tablas de mortalidad:")
@@ -111,33 +137,40 @@ def main(argv: list[str] | None = None) -> int:
     comunes = dict(agno_vector=args.agno_vector, agno_actual=args.agno_actual, fsiniestro=args.fsiniestro,
                    dir_tablas=args.dir_tablas, dir_vectores=args.dir_vectores)
 
+    # Regla unica de tasa (la misma de la API), resuelta antes de imprimir
+    # nada: sin tasa determinable o con vector inexistente se falla con stdout
+    # vacio. La descripcion (tabla y tasa efectivas) va en la primera linea.
+    core.tasas_por_periodo(args.agno_vector, getattr(args, "rv", None), _nan_a_none(args.rp),
+                           args.dir_vectores, args.fsiniestro)
     if c == "afil":
-        v = core.cnu_afiliado(args.x, args.mujer, args.tabla, rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
         print(core.describir("soltero sin hijos", args.tabla, None, args.agno_vector, args.agno_actual,
                              args.rv, args.rp, args.fsiniestro, mujer=args.mujer, dir_tablas=args.dir_tablas))
+        v = core.cnu_afiliado(args.x, args.mujer, args.tabla, rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
         print(f"{v:9.6f}")
     elif c == "conyuge":
-        v = core.cnu_conyuge(args.x, args.y, args.cot_mujer, not args.cony_hombre, args.tabla, args.tabla_benef,
-                             rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
         print(core.describir("conyuge sin hijos", args.tabla, args.tabla_benef, args.agno_vector,
                              args.agno_actual, args.rv, args.rp, args.fsiniestro,
                              mujer=args.cot_mujer, benef_mujer=not args.cony_hombre, dir_tablas=args.dir_tablas))
+        v = core.cnu_conyuge(args.x, args.y, args.cot_mujer, not args.cony_hombre, args.tabla, args.tabla_benef,
+                             rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
         print(f"{v:9.6f}")
     elif c == "sobrev":
-        v = core.cnu_sobrevivencia_conyuge(args.y, args.mujer, args.tabla_benef, rv=args.rv, rp=args.rp,
-                                           pasos=args.pasos, **comunes)
         print(core.describir("sobrevivencia de conyuge sin hijos", None, args.tabla_benef, args.agno_vector,
                              args.agno_actual, args.rv, args.rp, args.fsiniestro,
                              benef_mujer=args.mujer, dir_tablas=args.dir_tablas))
+        v = core.cnu_sobrevivencia_conyuge(args.y, args.mujer, args.tabla_benef, rv=args.rv, rp=args.rp,
+                                           pasos=args.pasos, **comunes)
         print(f"{v:9.6f}")
     elif c == "faj":
+        rp = _nan_a_none(args.rp)
+        quien = "afiliado soltero" if args.y is None else "afiliado con conyuge"
+        tasa = _etiqueta_tasa(None, rp, args.agno_vector, args.fsiniestro)
         v = _faj.faj_afiliado(
             args.x, args.y, args.cot_mujer, not args.cony_hombre, args.tabla, args.tabla_benef,
-            rp=_nan_a_none(args.rp), edad_maxima=args.edad_maxima, saldo=args.saldo, pcent=args.pcent,
+            rp=rp, edad_maxima=args.edad_maxima, saldo=args.saldo, pcent=args.pcent,
             rp0=args.rp0, criter=args.criter, maxiter=args.maxiter, **comunes,
         )
-        quien = "afiliado soltero" if args.y is None else "afiliado con conyuge"
-        print(f"FAJ para {quien}")
+        print(f"FAJ para {quien}, {tasa}")
         print(f"{v:9.6f}")
     elif c == "proy":
         r = proyeccion.proyectar_pension(

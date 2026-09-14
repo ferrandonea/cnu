@@ -132,8 +132,11 @@ con vector de tasas inexistente quedan en `nan` y se emite una advertencia
 ## Línea de comandos
 
 Los subcomandos aceptan las mismas opciones (`--tabla`, `--tabla-benef`,
-`--agno-actual`, `--fsiniestro`, ...), con `vigente` como tabla por defecto.
-La primera línea de la salida indica la tabla efectivamente usada.
+`--agno-actual`, `--fsiniestro`, ...), con `vigente` como tabla por defecto y
+la misma regla de tasa que la API: sin `--rp`, `--rv`, `--agno-vector` ni un
+`--fsiniestro` anterior a 2014 el comando termina con un mensaje en stderr y
+código de salida 2. La primera línea de la salida indica la tabla y la tasa
+efectivamente usadas (`tasa 3.45%` o `vector 2013`).
 
 ```
 cnu afil 65 --rp 0.03 --agno-actual 2026
@@ -143,7 +146,7 @@ cnu afil 65 --tabla rv2009 --agno-vector 2013 --agno-actual 2013
 cnu conyuge 65 63 --rp 0.03 --agno-actual 2026
 cnu sobrev 63 --mujer --rp 0.03
 cnu faj 65 62 --rp 0.03 --agno-vector 2013
-cnu proy 65 --faj --csv > trayectoria.csv
+cnu proy 65 --faj --csv --rp 0.03 > trayectoria.csv
 cnu tablas
 ```
 
