@@ -53,3 +53,11 @@ def test_sobrevivencia_es_positiva_y_menor_que_afiliado():
     s = cnu.cnu_sobrevivencia_conyuge(65, agno_actual=2013)
     a = cnu.cnu_afiliado(65, agno_actual=2013)
     assert 0 < s < a
+
+
+def test_fsiniestro_por_fila():
+    fechas = [20040101, 20130101, 20200101, 20240101]
+    v = cnu.cnu_afiliado_vec([65, 65, 65, 65], fsiniestro=fechas, agno_actual=2024)
+    esperado = [cnu.cnu_afiliado(65, tabla=t, agno_actual=2024) for t in ("rv1985", "rv2009", "cb2014", "cb2020")]
+    np.testing.assert_allclose(v, esperado)
+    assert len(set(v)) == 4

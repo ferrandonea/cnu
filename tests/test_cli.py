@@ -46,4 +46,18 @@ def test_tablas(capsys):
 
 def test_pasos(capsys):
     main(["afil", "65", "--pasos", "--agno-actual", "2013"])
-    assert "t =   1:" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "t =   1:" in out
+    assert "tabla rv2009h" in out
+
+
+def test_fsiniestro_muestra_tabla_resuelta(capsys):
+    assert main(["afil", "65", "--fsiniestro", "20240101", "--agno-actual", "2024"]) == 0
+    out = capsys.readouterr().out
+    assert "tabla cb2020h" in out
+    main(["afil", "65", "--mujer", "--fsiniestro", "20240101", "--agno-actual", "2024"])
+    assert "tabla rv2020m" in capsys.readouterr().out
+    main(["conyuge", "65", "62", "--pasos", "--fsiniestro", "20240101", "--agno-actual", "2024"])
+    out = capsys.readouterr().out
+    assert "tablas cb2020h b2020m" in out
+    assert out.count("tablas cb2020h b2020m") == 2  # pasos y descripcion

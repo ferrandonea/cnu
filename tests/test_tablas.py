@@ -76,10 +76,62 @@ def test_directorio_inexistente():
     [
         (20050131, "rv", 1985), (20050201, "rv", 2004), (20100630, "rv", 2004), (20100701, "rv", 2009),
         (20080131, "b", 1985), (20080201, "b", 2006), (20080131, "mi", 1985), (20080201, "mi", 2006),
+        # Vigencias nuevas (2016 y 2023).
+        (20160630, "rv", 2009), (20160701, "rv", 2014), (20230630, "rv", 2014), (20230701, "rv", 2020),
+        (20160630, "b", 2006), (20160701, "b", 2014), (20230630, "b", 2014), (20230701, "b", 2020),
+        (20160630, "mi", 2006), (20160701, "mi", 2014), (20230630, "mi", 2014), (20230701, "mi", 2020),
     ],
 )
 def test_agno_tabla_por_siniestro(f, tipo, esperado):
     assert cnu.agno_tabla_por_siniestro(f, tipo) == esperado
+
+
+# Fronteras de vigencia: (fecha, afiliado h, afiliado m, benef h, benef m, invalido h/m).
+_VIGENCIAS = [
+    (19900101, "rv1985", "rv1985", "b1985", "b1985", "mi1985"),
+    (20050131, "rv1985", "rv1985", "b1985", "b1985", "mi1985"),
+    (20050201, "rv2004", "rv2004", "b1985", "b1985", "mi1985"),
+    (20080131, "rv2004", "rv2004", "b1985", "b1985", "mi1985"),
+    (20080201, "rv2004", "rv2004", "b2006", "b2006", "mi2006"),
+    (20100630, "rv2004", "rv2004", "b2006", "b2006", "mi2006"),
+    (20100701, "rv2009", "rv2009", "b2006", "b2006", "mi2006"),
+    (20160630, "rv2009", "rv2009", "b2006", "b2006", "mi2006"),
+    (20160701, "cb2014", "rv2014", "cb2014", "b2014", "mi2014"),
+    (20230630, "cb2014", "rv2014", "cb2014", "b2014", "mi2014"),
+    (20230701, "cb2020", "rv2020", "cb2020", "b2020", "mi2020"),
+    (20240101, "cb2020", "rv2020", "cb2020", "b2020", "mi2020"),
+]
+
+
+@pytest.mark.parametrize("f, afil_h, afil_m, benef_h, benef_m, inv", _VIGENCIAS)
+def test_tabla_por_fecha(f, afil_h, afil_m, benef_h, benef_m, inv):
+    def nombre(rol, genero):
+        tipo, agno = cnu.tabla_por_fecha(f, rol, genero)
+        return f"{tipo}{agno}"
+
+    assert nombre("rv", "h") == afil_h
+    assert nombre("rv", "m") == afil_m
+    assert nombre("b", "h") == benef_h
+    assert nombre("b", "m") == benef_m
+    assert nombre("mi", "h") == inv
+    assert nombre("mi", "m") == inv
+
+
+def test_tabla_por_fecha_valida_argumentos():
+    with pytest.raises(ValueError, match="Rol"):
+        cnu.tabla_por_fecha(20240101, "cb", "h")
+    with pytest.raises(ValueError, match="Genero"):
+        cnu.tabla_por_fecha(20240101, "rv", "x")
+
+
+def test_resolver_tabla_con_rol_y_genero():
+    # Con rol y genero cambia tambien el tipo (cb para hombres desde 2016).
+    assert tablas.resolver_tabla("rv2009", 20240101, "rv", "h") == ("cb", 2020)
+    assert tablas.resolver_tabla("rv2009", 20240101, "rv", "m") == ("rv", 2020)
+    assert tablas.resolver_tabla("b2006", 20240101, "b", "h") == ("cb", 2020)
+    assert tablas.resolver_tabla("b2006", 20240101, "b", "m") == ("b", 2020)
+    # Sin fsiniestro se respeta la tabla explicita.
+    assert tablas.resolver_tabla("rv2009", 0, "rv", "h") == ("rv", 2009)
 
 
 def test_parsear_nombre_tabla():

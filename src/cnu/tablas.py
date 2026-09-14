@@ -431,33 +431,87 @@ def limpiar_cache() -> None:
 # ---------------------------------------------------------------------------
 # Asignacion dinamica de tabla segun fecha del siniestro
 # ---------------------------------------------------------------------------
-def agno_tabla_por_siniestro(fsiniestro: int, tipo: str) -> int:
-    """Determina el agno de tabla que corresponde a un siniestro (``cnu_which_tab_mort``).
+ROLES = ("rv", "b", "mi")
 
-    ``fsiniestro`` va en formato ``YYYYMMDD``.
+# Vigencias oficiales: (primera fecha de vigencia YYYYMMDD, agno de las
+# tablas, hombres usan la tabla combinada ``cb`` en vez de ``rv``/``b``).
+# Cada tramo rige desde su fecha hasta el dia anterior al tramo siguiente.
+_VIGENCIAS_AFILIADO = ((0, 1985, False), (20050201, 2004, False), (20100701, 2009, False),
+                       (20160701, 2014, True), (20230701, 2020, True))
+_VIGENCIAS_BENEFICIARIO = ((0, 1985, False), (20080201, 2006, False),
+                           (20160701, 2014, True), (20230701, 2020, True))
+_VIGENCIAS_INVALIDO = ((0, 1985, False), (20080201, 2006, False),
+                       (20160701, 2014, False), (20230701, 2020, False))
+_VIGENCIAS = {"rv": _VIGENCIAS_AFILIADO, "b": _VIGENCIAS_BENEFICIARIO, "mi": _VIGENCIAS_INVALIDO}
+
+
+def validar_rol(rol: str) -> str:
+    if rol not in ROLES:
+        raise ValueError(f"Rol '{rol}' no permitido. Solo {', '.join(ROLES)} estan permitidos")
+    return rol
+
+
+def tabla_por_fecha(fecha: int, rol: str, genero: str) -> tuple[str, int]:
+    """Tipo y agno de la tabla vigente a la ``fecha`` (``YYYYMMDD``) del siniestro.
+
+    ``rol`` es ``rv`` (afiliado), ``b`` (beneficiario) o ``mi`` (invalido) y
+    ``genero`` es ``h`` o ``m``. Desde el 1 de julio de 2016 los hombres no
+    invalidos usan la tabla combinada ``cb`` (afiliados y beneficiarios):
+
+    ======================  ========  ========  ========  ========  ========
+    Fecha                   Afil. H   Afil. M   Benef. H  Benef. M  Invalido
+    ======================  ========  ========  ========  ========  ========
+    hasta 31-01-2005        rv1985    rv1985    b1985     b1985     mi1985
+    01-02-2005 a 31-01-2008 rv2004    rv2004    b1985     b1985     mi1985
+    01-02-2008 a 30-06-2010 rv2004    rv2004    b2006     b2006     mi2006
+    01-07-2010 a 30-06-2016 rv2009    rv2009    b2006     b2006     mi2006
+    01-07-2016 a 30-06-2023 cb2014    rv2014    cb2014    b2014     mi2014
+    desde 01-07-2023        cb2020    rv2020    cb2020    b2020     mi2020
+    ======================  ========  ========  ========  ========  ========
     """
-    if tipo not in ("rv", "mi", "b"):
+    validar_rol(rol)
+    validar_genero(genero)
+    f = int(fecha)
+    agno, combinada = None, False
+    for desde, agno_tramo, combinada_tramo in _VIGENCIAS[rol]:
+        if f < desde:
+            break
+        agno, combinada = agno_tramo, combinada_tramo
+    tipo = "cb" if combinada and genero == "h" else rol
+    return tipo, agno
+
+
+def agno_tabla_por_siniestro(fsiniestro: int, tipo: str) -> int:
+    """Agno de la tabla vigente a la fecha del siniestro (``cnu_which_tab_mort``).
+
+    ``fsiniestro`` va en formato ``YYYYMMDD`` y ``tipo`` es el rol (``rv``,
+    ``b`` o ``mi``). El agno no depende del sexo; vease
+    :func:`tabla_por_fecha` para obtener tambien el tipo (``cb`` para hombres
+    desde 2016).
+    """
+    if tipo not in ROLES:
         raise ValueError(f"Tipo de tabla '{tipo}' no permitido. Solo rv, mi o b estan permitidos")
-    f = int(fsiniestro)
-    if tipo == "rv":
-        if f <= 20050131:
-            return 1985
-        if f <= 20100630:
-            return 2004
-        return 2009
-    # mi y b comparten vigencias
-    return 1985 if f <= 20080131 else 2006
+    return tabla_por_fecha(fsiniestro, tipo, "h")[1]
 
 
-def resolver_tabla(tabla: str, fsiniestro: int = 0) -> tuple[str, int]:
+def resolver_tabla(
+    tabla: str, fsiniestro: int = 0, rol: str | None = None, genero: str | None = None
+) -> tuple[str, int]:
     """Devuelve ``(tipo, agno)`` para ``tabla`` (p.ej. ``"rv2009"``).
 
-    Si ``fsiniestro`` es distinto de 0, el agno se asigna dinamicamente segun
-    la normativa vigente a esa fecha.
+    Si ``fsiniestro`` es distinto de 0 la tabla se asigna dinamicamente segun
+    la normativa vigente a esa fecha con :func:`tabla_por_fecha`, usando el
+    ``rol`` (por defecto, el tipo del nombre) y el ``genero`` de la persona.
+    Sin ``genero`` solo se reasigna el agno y se conserva el tipo del nombre
+    (comportamiento del modulo de Stata).
     """
     tipo, agno = parsear_nombre_tabla(tabla)
     if fsiniestro:
-        agno = agno_tabla_por_siniestro(fsiniestro, tipo)
+        rol = rol or tipo
+        if genero is None:
+            agno = agno_tabla_por_siniestro(fsiniestro, rol)
+        else:
+            tipo, agno = tabla_por_fecha(fsiniestro, rol, genero)
     return tipo, agno
 
 

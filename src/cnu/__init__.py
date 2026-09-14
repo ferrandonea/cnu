@@ -43,6 +43,7 @@ from .tablas import (  # noqa: E402
     guardar_tabla_mortalidad,
     guardar_vector_tasas,
     leer_matriz_mata,
+    tabla_por_fecha,
     tablas_disponibles,
     vectores_disponibles,
 )
@@ -72,6 +73,7 @@ __all__ = [
     "cnu_sobrevivencia_conyuge", "cnu_sobrevivencia_conyuge_vec", "describir",
     "escribir_matriz_mata", "faj_afiliado", "faj_afiliado_vec", "faj_funcion_objetivo",
     "guardar_tabla_mortalidad", "guardar_vector_tasas", "leer_matriz_mata", "main",
-    "proyectar_cnu", "proyectar_pension", "tabla_mortalidad", "tablas_disponibles", "tasas_por_periodo",
+    "proyectar_cnu", "proyectar_pension", "tabla_mortalidad", "tabla_por_fecha", "tablas_disponibles",
+    "tasas_por_periodo",
     "vectores_disponibles",
 ]

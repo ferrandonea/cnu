@@ -63,3 +63,38 @@ def test_tablas_2020_explicitas_dan_valores_finitos():
         assert math.isfinite(v) and v > 0
     r = cnu.proyectar_pension(65, 62, saldo=1000.0, tabla="cb2020", tabla_benef="b2020", agno_actual=2024)
     assert np.all(np.isfinite(r.pension)) and np.all(r.pension > 0)
+
+
+def test_fsiniestro_resuelve_tablas_2020():
+    assert cnu.tabla_mortalidad("rv2009", cnu.ROL_AFILIADO, False, 20240101).nombre == "cnu_tabmor_cb2020h"
+    assert cnu.tabla_mortalidad("rv2009", cnu.ROL_AFILIADO, True, 20240101).nombre == "cnu_tabmor_rv2020m"
+    assert cnu.tabla_mortalidad("b2006", cnu.ROL_BENEFICIARIO, True, 20240101).nombre == "cnu_tabmor_b2020m"
+    assert cnu.tabla_mortalidad("b2006", cnu.ROL_BENEFICIARIO, False, 20240101).nombre == "cnu_tabmor_cb2020h"
+    # Lo mismo, de punta a punta: fsiniestro equivale a la tabla 2020 explicita.
+    assert cnu.cnu_afiliado(65, fsiniestro=20240101, agno_actual=2024) == cnu.cnu_afiliado(65, tabla="cb2020", agno_actual=2024)
+    assert cnu.cnu_afiliado(65, mujer=True, fsiniestro=20240101, agno_actual=2024) == cnu.cnu_afiliado(
+        65, mujer=True, tabla="rv2020", agno_actual=2024
+    )
+    assert cnu.cnu_conyuge(65, 62, fsiniestro=20240101, agno_actual=2024) == cnu.cnu_conyuge(
+        65, 62, tabla="cb2020", tabla_benef="b2020", agno_actual=2024
+    )
+    assert cnu.cnu_conyuge(65, 62, cony_mujer=False, fsiniestro=20240101, agno_actual=2024) == cnu.cnu_conyuge(
+        65, 62, cony_mujer=False, tabla="cb2020", tabla_benef="cb2020", agno_actual=2024
+    )
+
+
+def test_fsiniestro_anterior_a_2016_no_cambia():
+    # Vigencia 2010-2016: rv2009 / b2006, los mismos defaults historicos.
+    assert cnu.cnu_afiliado(65, fsiniestro=20130101, agno_actual=2013) == pytest.approx(13.016877)
+    assert cnu.cnu_conyuge(65, 63, fsiniestro=20110301, agno_actual=2011, agno_vector=2011) == pytest.approx(2.231859)
+    # Vigencia 2005-2008: rv2004 (mismo valor que pedirla explicitamente).
+    assert cnu.cnu_afiliado(65, fsiniestro=20060101, agno_actual=2013) == cnu.cnu_afiliado(65, tabla="rv2004", agno_actual=2013)
+
+
+def test_describir_muestra_tabla_resuelta():
+    d = cnu.describir("soltero sin hijos", "rv2009", agno_actual=2024, fsiniestro=20240101)
+    assert "tabla cb2020h" in d
+    d = cnu.describir("soltero sin hijos", "rv2009", agno_actual=2024, fsiniestro=20240101, mujer=True)
+    assert "tabla rv2020m" in d
+    d = cnu.describir("conyuge sin hijos", "rv2009", "b2006", agno_actual=2013, fsiniestro=20130101)
+    assert "tablas rv2009h b2006m" in d

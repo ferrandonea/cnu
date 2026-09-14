@@ -103,12 +103,19 @@ def tabla_mortalidad(
     :data:`ROL_BENEFICIARIO` o :data:`ROL_INVALIDO`) y sexo ``mujer``.
 
     :param fsiniestro: fecha del siniestro ``YYYYMMDD``; si es distinta de 0,
-        el agno de la tabla se asigna dinamicamente segun la normativa.
+        la tabla (tipo y agno) se asigna dinamicamente segun la vigencia a esa
+        fecha para el ``rol`` y sexo dados (:func:`cnu.tablas.tabla_por_fecha`).
     :param agno_actual: agno de calculo. Junto con ``rol`` es el enganche para
         resolver la tabla vigente; hoy no altera la seleccion.
     """
-    tipo, agno_tabla = resolver_tabla(tabla, fsiniestro)
-    return cargar_tabla_mortalidad(tipo, agno_tabla, genero_desde_bool(mujer), dir_tablas)
+    genero = genero_desde_bool(mujer)
+    tipo, agno_tabla = resolver_tabla(tabla, fsiniestro, rol, genero)
+    return cargar_tabla_mortalidad(tipo, agno_tabla, genero, dir_tablas)
+
+
+def _etiqueta_tabla(tm: TablaMortalidad) -> str:
+    """Tabla efectivamente resuelta: tipo, agno y sexo (p.ej. ``cb2020h``)."""
+    return f"{tm.tipo}{tm.agno}{tm.genero}"
 
 
 def cnu_afiliado(
@@ -147,6 +154,7 @@ def cnu_afiliado(
     cnu = 1.0
     lxt = 1.0
     if pasos:
+        print(f"tabla {_etiqueta_tabla(tm)}")
         print("t =   0: CNU = 1")
     for t in range(1, tmax + 1):
         lxt *= 1.0 - qx[x + t - 1]
@@ -198,6 +206,7 @@ def cnu_conyuge(
     lxt = 1.0
     lyt = 1.0
     if pasos:
+        print(f"tablas {_etiqueta_tabla(tm_cot)} {_etiqueta_tabla(tm_cony)}")
         print("t =   0: CNU = 1")
     for t in range(1, tmax + 1):
         i = tasas[t - 1]
@@ -240,6 +249,7 @@ def cnu_sobrevivencia_conyuge(
     cnu = 1.0
     lyt = 1.0
     if pasos:
+        print(f"tabla {_etiqueta_tabla(tm)}")
         print("t =   0: CNU = 1")
     for t in range(1, tmax + 1):
         lyt *= 1.0 - qx[y + t - 1]
@@ -266,14 +276,15 @@ def describir(
     """Etiqueta descriptiva del calculo, al estilo de los comandos de Stata.
 
     ``tabla`` es la del afiliado (sexo ``mujer``) y ``tabla_benef`` la del
-    beneficiario (sexo ``benef_mujer``).
+    beneficiario (sexo ``benef_mujer``). Se muestran las tablas efectivamente
+    resueltas (tipo, agno y sexo), p.ej. ``cb2020h`` con ``fsiniestro`` de 2024.
     """
     agno_actual = _agno(agno_actual)
     tablas = []
     for t, rol, es_mujer in ((tabla, ROL_AFILIADO, mujer), (tabla_benef, ROL_BENEFICIARIO, benef_mujer)):
         if t:
             tm = tabla_mortalidad(t, rol, es_mujer, fsiniestro, agno_actual, dir_tablas)
-            tablas.append(f"{tm.tipo}{tm.agno}")
+            tablas.append(_etiqueta_tabla(tm))
     etiqueta_tablas = ("tablas " if len(tablas) > 1 else "tabla ") + " ".join(tablas)
     if rv is not None:
         return f"CNU RV para {tipo_cnu} ({etiqueta_tablas}), tasa {rv * 100:g}% en el año {agno_actual}"
