@@ -130,5 +130,5 @@ def test_cli_default_vigente(capsys):
     assert "cb2020 b2020" in capsys.readouterr().out
     main(["faj", "65", "--agno-vector", "2013", "--agno-actual", "2026"])
     assert float(capsys.readouterr().out.strip().splitlines()[-1]) == pytest.approx(
-        cnu.faj_afiliado(65, tabla="cb2020", agno_vector=2013, agno_actual=2026), abs=1e-6
+        cnu.faj_afiliado(65, tabla="cb2020", rp=0.03, agno_vector=2013, agno_actual=2026), abs=1e-6
     )

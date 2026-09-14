@@ -61,7 +61,7 @@ def test_tablas_2020_explicitas_dan_valores_finitos():
         cnu.faj_afiliado(65, tabla="cb2020", agno_vector=2013, agno_actual=2024),
     ):
         assert math.isfinite(v) and v > 0
-    r = cnu.proyectar_pension(65, 62, saldo=1000.0, tabla="cb2020", tabla_benef="b2020", agno_actual=2024)
+    r = cnu.proyectar_pension(65, 62, saldo=1000.0, tabla="cb2020", tabla_benef="b2020", rp=0.03, agno_actual=2024)
     assert np.all(np.isfinite(r.pension)) and np.all(r.pension > 0)
 
 

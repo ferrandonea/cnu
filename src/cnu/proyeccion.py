@@ -62,7 +62,10 @@ def proyectar_cnu(
     ``rp`` y ``rv`` pueden ser ``None``, un escalar o un arreglo con una tasa
     por periodo proyectado (como en Mata, la tasa ``j`` se usa como tasa
     constante para el CNU del periodo ``j``). Si ``rv`` se entrega, el CNU es
-    de Renta Vitalicia.
+    de Renta Vitalicia. Cada CNU de la trayectoria aplica la regla unica de
+    :func:`cnu.core.tasas_por_periodo`: sin ``rv`` ni ``rp`` se usa
+    ``agno_vector`` explicito o el vector del agno de un ``fsiniestro``
+    anterior a 2014; en otro caso lanza ``ValueError`` (TITRP en ``rp``).
 
     Las tablas se resuelven una sola vez, al inicio de la proyeccion
     (``fsiniestro`` o, con ``"vigente"``, el 31 de diciembre de
@@ -151,7 +154,7 @@ def proyectar_pension(
     tabla_benef: str = TABLA_BENEFICIARIO,
     agno_vector: int = AGNO_VECTOR,
     agno_actual: int | None = None,
-    rp: float | None = 0.03,
+    rp: float | None = None,
     fsiniestro: int = 0,
     faj: bool = False,
     edad_maxima: int = 98,
@@ -169,7 +172,10 @@ def proyectar_pension(
         conyuge (sexo ``cony_mujer``); por defecto ``"vigente"``, resueltas
         una sola vez al inicio (``fsiniestro`` o el 31 de diciembre de
         ``agno_actual``) como en :func:`proyectar_cnu`.
-    :param rp: tasa de retiro programado; ``None`` usa el vector ``agno_vector``.
+    :param rp: tasa unica de retiro programado (TITRP). Sin ``rp`` rige la
+        regla de :func:`cnu.core.tasas_por_periodo`: ``agno_vector`` explicito
+        o el vector del agno de un ``fsiniestro`` anterior a 2014; en otro
+        caso ``ValueError``. No hay tasa por defecto.
     :param faj: si ``True``, la pension incluye Factor de Ajuste (ver :mod:`cnu.faj`).
     :param edad_maxima, pcent, rp0, criter, maxiter: parametros del FAJ.
     """
@@ -181,16 +187,16 @@ def proyectar_pension(
     if saldo == 0:
         saldo = 1.0
     n = EDAD_MAXIMA - x + 1
+    tasas = core.tasas_por_periodo(agno_vector, None, rp, dir_vectores, fsiniestro)
     cnu = proyectar_cnu(
         x, y, cot_mujer, cony_mujer, tabla, tabla_benef, agno_vector, agno_actual,
         None, rp, fsiniestro, dir_tablas, dir_vectores,
     )
-    tasas = core.tasas_por_periodo(agno_vector, None, rp, dir_vectores, fsiniestro)
     edades = np.arange(x, EDAD_MAXIMA + 1, dtype=float)
 
     quien = "afiliado soltero" if y is None else "afiliado con conyuge"
     tablas = tabla if y is None else f"{tabla} {tabla_benef}"
-    tasa = f"vector {agno_vector}" if rp is None else f"tasa {rp:g}"
+    tasa = f"vector {core.agno_vector_efectivo(agno_vector, fsiniestro)}" if rp is None else f"tasa {rp:g}"
     sufijo = " con FAJ" if faj else ""
     descripcion = f"Trayectoria de pension{sufijo} para {quien} (tabla {tablas}) {tasa} en {agno_actual}."
 

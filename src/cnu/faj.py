@@ -7,7 +7,6 @@ y a los comandos ``cnu_faji`` (escalar) y ``cnu_faj`` (vectorial) de Stata.
 from __future__ import annotations
 
 import math
-import warnings
 
 import numpy as np
 
@@ -94,7 +93,7 @@ def faj_afiliado(
     tabla_benef: str = TABLA_BENEFICIARIO,
     agno_vector: int = AGNO_VECTOR,
     agno_actual: int | None = None,
-    rp: float | None = 0.03,
+    rp: float | None = None,
     fsiniestro: int = 0,
     edad_maxima: int = EDAD_MAXIMA_FAJ,
     saldo: float = 1.0,
@@ -107,9 +106,16 @@ def faj_afiliado(
 ) -> float:
     """FAJ para un afiliado, con o sin conyuge (equivale a ``cnu_faji``).
 
-    Igual que el comando de Stata, la trayectoria del CNU se calcula siempre
-    con el vector de tasas ``agno_vector``; ``rp`` (tasa unica, o ``None`` para
-    usar el vector) solo interviene en la capitalizacion del saldo.
+    La tasa de capitalizacion del saldo sigue la regla unica de
+    :func:`cnu.core.tasas_por_periodo`: ``rp`` (TITRP), ``agno_vector``
+    explicito o, sin ellos, el vector del agno de un ``fsiniestro`` anterior a
+    2014; sin tasa determinable lanza ``ValueError``. No hay ``rp`` por
+    defecto.
+
+    Para la trayectoria del CNU, si ``agno_vector`` se entrega explicitamente
+    se usa ese vector (como el comando de Stata; reproduce los valores
+    historicos del FAJ). En caso contrario se usa la misma tasa constante
+    ``rp`` de la capitalizacion, igual que :func:`faj_afiliado_vec`.
 
     Las tablas ``tabla`` (afiliado, sexo ``cot_mujer``) y ``tabla_benef``
     (beneficiario, sexo ``cony_mujer``), por defecto ``"vigente"``, se
@@ -120,11 +126,14 @@ def faj_afiliado(
     from .proyeccion import proyectar_cnu  # importacion diferida (ciclo)
 
     x = core.edad_entera(x)
+    rp_a = core.tasas_por_periodo(agno_vector, None, rp, dir_vectores, fsiniestro)
+    # Con agno_vector explicito la trayectoria usa el vector (rp=None en cada
+    # periodo); sin el, la misma tasa por periodo que la capitalizacion.
+    rp_cnu = None if core._agno_vector_explicito(agno_vector) else rp_a
     cnu = proyectar_cnu(
         x, y, cot_mujer, cony_mujer, tabla, tabla_benef, agno_vector, agno_actual,
-        None, None, fsiniestro, dir_tablas, dir_vectores,
+        None, rp_cnu, fsiniestro, dir_tablas, dir_vectores,
     )
-    rp_a = core.tasas_por_periodo(agno_vector, None, rp, dir_vectores, fsiniestro)
     return calcular_faj(x, cnu, rp_a, edad_maxima, saldo, pcent, rp0, criter, maxiter)
 
 
@@ -151,17 +160,20 @@ def faj_afiliado_vec(
 ) -> np.ndarray:
     """FAJ para varias observaciones (equivale a ``cnu_faj`` vectorial).
 
-    A diferencia de :func:`faj_afiliado`, aqui ``rp`` (si se entrega) se usa
-    tambien como tasa constante para la trayectoria del CNU; si es ``None``
-    (o ``nan`` en la fila) se usa el vector ``agno_vector``: la tasa del
-    periodo ``j`` del vector se aplica como tasa constante al CNU del periodo
-    ``j`` (comportamiento heredado de ``cnu_faj_vec``).
+    La tasa de cada fila sigue la regla unica de
+    :func:`cnu.core.tasas_por_periodo` (``rp``, ``agno_vector`` o
+    ``fsiniestro`` anterior a 2014 de esa observacion) y se usa tanto para
+    capitalizar el saldo como para la trayectoria del CNU: la tasa del periodo
+    ``j`` se aplica como tasa constante al CNU del periodo ``j``
+    (comportamiento heredado de ``cnu_faj_vec``). Las filas sin tasa
+    determinable o con vector inexistente quedan en ``nan`` y se acumulan en
+    una :class:`cnu.AdvertenciaCNU` con el motivo.
 
     Las tablas (por defecto ``"vigente"``) se resuelven por fila, con el rol,
     el sexo y la fecha de cada observacion, al inicio de su trayectoria.
     """
     from .proyeccion import proyectar_cnu  # importacion diferida (ciclo)
-    from .vectorial import AdvertenciaCNU, _preparar
+    from .vectorial import _advertir, _motivo_sin_tasa, _opcional, _preparar
 
     x = np.atleast_1d(np.asarray(x, dtype=float))
     n = len(x)
@@ -169,20 +181,20 @@ def faj_afiliado_vec(
                   agno_vector=agno_vector, agno_actual=agno_actual, rp=rp, fsiniestro=fsiniestro,
                   edad_maxima=edad_maxima, saldo=saldo, pcent=pcent, rp0=rp0, incluir=incluir)
     faj = np.full(n, np.nan)
-    sin_vector = []
+    errores: dict[str, list[int]] = {"sin_tasa": [], "vector": []}
     for i in range(n):
         if not a["incluir"][i] or math.isnan(x[i]):
             continue
         xi = core.edad_entera(x[i])
         if xi < EDAD_MINIMA or xi > EDAD_MAXIMA:
             continue
-        agno_vec = None if math.isnan(a["agno_vector"][i]) else int(a["agno_vector"][i])
-        rp_a = core.tasas_por_periodo(
-            agno_vec, None, a["rp"][i], dir_vectores, int(a["fsiniestro"][i]), estricto=False
-        )
-        if rp_a is None:
-            sin_vector.append(i)
+        rp_i = _opcional(a["rp"][i])
+        motivo = _motivo_sin_tasa(a, i, None, rp_i, dir_vectores)
+        if motivo is not None:
+            errores[motivo].append(i)
             continue
+        agno_vec = None if math.isnan(a["agno_vector"][i]) else int(a["agno_vector"][i])
+        rp_a = core.tasas_por_periodo(agno_vec, None, rp_i, dir_vectores, int(a["fsiniestro"][i]))
         yi = None if math.isnan(a["y"][i]) else core.edad_entera(a["y"][i])
         agno_act = None if math.isnan(a["agno_actual"][i]) else int(a["agno_actual"][i])
         cnu = proyectar_cnu(
@@ -193,13 +205,11 @@ def faj_afiliado_vec(
         faj[i] = calcular_faj(
             xi, cnu, rp_a, a["edad_maxima"][i], a["saldo"][i], a["pcent"][i], rp0_i, criter, maxiter,
         )
-    if sin_vector:
-        warnings.warn(
-            f"Para las siguientes observaciones ({len(sin_vector)}) se intentó utilizar un vector "
-            f"inexistente: {' '.join(map(str, sin_vector[:20]))}",
-            AdvertenciaCNU,
-            stacklevel=2,
-        )
+    _advertir(errores, {
+        "sin_tasa": "Las siguientes observaciones quedan sin tasa: desde 2014 se requiere rp"
+                    " (o agno_vector o fsiniestro anterior a 2014)",
+        "vector": "Para las siguientes observaciones se intentó utilizar un vector inexistente",
+    })
     return faj
 
 
