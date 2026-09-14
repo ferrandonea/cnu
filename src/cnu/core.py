@@ -147,8 +147,70 @@ def tasas_por_periodo(
 
 
 def edad_entera(edad) -> int:
-    """Punto unico de conversion de una edad a entero (por ahora, trunca)."""
-    return int(edad)
+    """Punto unico de conversion de una edad a entero: edad actuarial.
+
+    Redondea al entero mas cercano con el medio hacia arriba, como exige el
+    Compendio de Normas (una fraccion de seis meses o mas cuenta como el agno
+    siguiente): ``65.4 -> 65``, ``65.5 -> 66``, ``65.7 -> 66``. Se aplica en
+    todas las funciones (escalares, vectoriales, FAJ y proyecciones) antes de
+    validar el rango de edades. Ver :func:`edad_actuarial` para obtenerla a
+    partir de fechas.
+    """
+    return math.floor(float(edad) + 0.5)
+
+
+def _a_fecha(fecha) -> _dt.date:
+    """``YYYYMMDD`` (entero) o ``datetime.date`` -> ``datetime.date``."""
+    if isinstance(fecha, _dt.datetime):
+        return fecha.date()
+    if isinstance(fecha, _dt.date):
+        return fecha
+    fecha = int(fecha)
+    return _dt.date(fecha // 10000, fecha // 100 % 100, fecha % 100)
+
+
+def _mismo_dia(agno: int, mes: int, dia: int) -> _dt.date:
+    """Fecha ``agno-mes-dia`` o, si ese dia no existe (29 de febrero), el ultimo del mes."""
+    while True:
+        try:
+            return _dt.date(agno, mes, dia)
+        except ValueError:
+            dia -= 1
+
+
+def edad_actuarial(fecha_nacimiento, fecha_calculo) -> int:
+    """Edad actuarial a ``fecha_calculo``: la edad exacta redondeada al entero
+    mas cercano, con el medio hacia arriba.
+
+    La edad exacta son los agnos cumplidos mas la fraccion transcurrida desde
+    el ultimo cumpleagnos, medida en meses y dias (los dias como fraccion del
+    mes en curso). Asi, exactamente seis meses despues del cumpleagnos la
+    edad se redondea al agno siguiente, y un dia antes de esos seis meses se
+    mantiene:
+
+    >>> edad_actuarial(19600915, 20260315)
+    66
+    >>> edad_actuarial(19600916, 20260315)
+    65
+
+    Ambas fechas aceptan enteros ``YYYYMMDD`` (como ``fsiniestro``) u objetos
+    ``datetime.date``.
+    """
+    nac, calc = _a_fecha(fecha_nacimiento), _a_fecha(fecha_calculo)
+    if calc < nac:
+        raise ValueError("fecha_calculo es anterior a fecha_nacimiento")
+    # Meses completos: el "mesiversario" del mes de calculo, si aun no llega, no cuenta.
+    meses = (calc.year - nac.year) * 12 + (calc.month - nac.month)
+    if calc < _mismo_dia(calc.year, calc.month, nac.day):
+        meses -= 1
+
+    def mesiversario(k: int) -> _dt.date:
+        agno, mes = divmod(nac.year * 12 + nac.month - 1 + k, 12)
+        return _mismo_dia(agno, mes + 1, nac.day)
+
+    ultimo, siguiente = mesiversario(meses), mesiversario(meses + 1)
+    fraccion_mes = (calc - ultimo).days / (siguiente - ultimo).days
+    return edad_entera((meses + fraccion_mes) / 12)
 
 
 def _es_missing(v) -> bool:

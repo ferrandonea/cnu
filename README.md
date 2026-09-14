@@ -61,9 +61,19 @@ cnu.cnu_afiliado(65, fsiniestro=20230701, rp=0.03, agno_actual=2023)   # 15.3201
 # Qué tabla y qué tasa se usaron
 cnu.describir("soltero sin hijos", "vigente", rp=0.03, agno_actual=2026)
 # 'CNU RP para soltero sin hijos (tabla cb2020h), tasa 3% en el año 2026'
+
+# Edad actuarial: la edad exacta redondeada al entero más cercano (seis meses o más suben)
+cnu.edad_actuarial(19600915, 20260315)                   # 66  (acepta YYYYMMDD o datetime.date)
+cnu.cnu_afiliado(65.7, rp=0.0345, agno_actual=2026)      # 14.322867, igual que con 66
 ```
 
 Si `agno_actual` no se entrega se usa el año del sistema.
+
+Las edades se interpretan como **edad actuarial**, como exige el Compendio:
+una edad decimal se redondea al entero más cercano con el medio hacia arriba
+(`65.4` → 65, `65.5` → 66) en todas las funciones, antes de validar el rango
+de 20 a 110 años. `cnu.edad_actuarial(fecha_nacimiento, fecha_calculo)` la
+obtiene a partir de dos fechas.
 
 La tasa de descuento debe ser explícita: `rv` (renta vitalicia), `rp` (tasa
 única de retiro programado, la TITRP que publica la SP desde 2014) o
@@ -140,6 +150,7 @@ efectivamente usadas (`tasa 3.45%` o `vector 2013`).
 
 ```
 cnu afil 65 --rp 0.03 --agno-actual 2026
+cnu afil 65.7 --rp 0.0345 --agno-actual 2026    # edad actuarial 66, indicada en la primera línea
 cnu afil 65 --fsiniestro 20240315 --rp 0.03
 cnu afil 65 --mujer --rp 0.03 --pasos
 cnu afil 65 --tabla rv2009 --agno-vector 2013 --agno-actual 2013

@@ -52,28 +52,29 @@ def construir_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="comando", required=True)
 
     p = sub.add_parser("afil", help="CNU para afiliado (cnu_afili)")
-    p.add_argument("x", type=int, help="edad del afiliado")
+    p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
     p.add_argument("--mujer", action="store_true", help="el afiliado es mujer")
     _opciones_comunes(p, benef=False)
     _opciones_tasa(p)
 
     p = sub.add_parser("conyuge", help="CNU para cónyuge sin hijos (cnu_cnyg_s_hi)")
-    p.add_argument("x", type=int, help="edad del afiliado")
-    p.add_argument("y", type=int, help="edad del cónyuge")
+    p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("y", type=float, help="edad del cónyuge (admite decimales; se redondea a edad actuarial)")
     p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
     p.add_argument("--cony-hombre", action="store_true", help="el cónyuge es hombre (por defecto, mujer)")
     _opciones_comunes(p, benef=True)
     _opciones_tasa(p)
 
     p = sub.add_parser("sobrev", help="CNU de sobrevivencia para cónyuge sin hijos (cnu_sobr_cnyg_s_hi)")
-    p.add_argument("y", type=int, help="edad del cónyuge")
+    p.add_argument("y", type=float, help="edad del cónyuge (admite decimales; se redondea a edad actuarial)")
     p.add_argument("--mujer", action="store_true", help="el cónyuge es mujer")
     _opciones_comunes(p, benef=True, afil=False)
     _opciones_tasa(p)
 
     p = sub.add_parser("faj", help="Factor de Ajuste (cnu_faji); derogado desde el 1-2-2022 (Ley 21.419)")
-    p.add_argument("x", type=int, help="edad del afiliado")
-    p.add_argument("y", type=int, nargs="?", default=None, help="edad del cónyuge (opcional)")
+    p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("y", type=float, nargs="?", default=None,
+                   help="edad del cónyuge, opcional (admite decimales; se redondea a edad actuarial)")
     p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
     p.add_argument("--cony-hombre", action="store_true", help="el cónyuge es hombre (por defecto, mujer)")
     p.add_argument("--rp", type=float, default=None, help="tasa única de retiro programado (TITRP)")
@@ -81,8 +82,9 @@ def construir_parser() -> argparse.ArgumentParser:
     _opciones_faj(p)
 
     p = sub.add_parser("proy", help="Proyección de pensión en retiro programado (cnu_proy_pensi)")
-    p.add_argument("x", type=int, help="edad del afiliado")
-    p.add_argument("y", type=int, nargs="?", default=None, help="edad del cónyuge (opcional)")
+    p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("y", type=float, nargs="?", default=None,
+                   help="edad del cónyuge, opcional (admite decimales; se redondea a edad actuarial)")
     p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
     p.add_argument("--cony-hombre", action="store_true", help="el cónyuge es hombre (por defecto, mujer)")
     p.add_argument("--rp", type=float, default=None, help="tasa única de retiro programado (TITRP)")
@@ -107,6 +109,14 @@ def _etiqueta_tasa(rv, rp, agno_vector, fsiniestro) -> str:
     if rp is not None:
         return f"tasa {rp * 100:g}%"
     return f"vector {core.agno_vector_efectivo(agno_vector, fsiniestro)}"
+
+
+def _nota_edades(**edades) -> str:
+    """Sufijo para la primera linea con las edades actuariales usadas, si difieren de las entregadas."""
+    notas = [f"{nombre} {valor:g} -> {core.edad_entera(valor)}"
+             for nombre, valor in edades.items()
+             if valor is not None and core.edad_entera(valor) != valor]
+    return f" [edad actuarial: {', '.join(notas)}]" if notas else ""
 
 
 CODIGO_ERROR_TASA = 2
@@ -154,20 +164,23 @@ def _ejecutar(args) -> int:
                            args.dir_vectores, args.fsiniestro)
     if c == "afil":
         print(core.describir("soltero sin hijos", args.tabla, None, args.agno_vector, args.agno_actual,
-                             args.rv, args.rp, args.fsiniestro, mujer=args.mujer, dir_tablas=args.dir_tablas))
+                             args.rv, args.rp, args.fsiniestro, mujer=args.mujer, dir_tablas=args.dir_tablas)
+              + _nota_edades(afiliado=args.x))
         v = core.cnu_afiliado(args.x, args.mujer, args.tabla, rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
         print(f"{v:9.6f}")
     elif c == "conyuge":
         print(core.describir("conyuge sin hijos", args.tabla, args.tabla_benef, args.agno_vector,
                              args.agno_actual, args.rv, args.rp, args.fsiniestro,
-                             mujer=args.cot_mujer, benef_mujer=not args.cony_hombre, dir_tablas=args.dir_tablas))
+                             mujer=args.cot_mujer, benef_mujer=not args.cony_hombre, dir_tablas=args.dir_tablas)
+              + _nota_edades(afiliado=args.x, conyuge=args.y))
         v = core.cnu_conyuge(args.x, args.y, args.cot_mujer, not args.cony_hombre, args.tabla, args.tabla_benef,
                              rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
         print(f"{v:9.6f}")
     elif c == "sobrev":
         print(core.describir("sobrevivencia de conyuge sin hijos", None, args.tabla_benef, args.agno_vector,
                              args.agno_actual, args.rv, args.rp, args.fsiniestro,
-                             benef_mujer=args.mujer, dir_tablas=args.dir_tablas))
+                             benef_mujer=args.mujer, dir_tablas=args.dir_tablas)
+              + _nota_edades(conyuge=args.y))
         v = core.cnu_sobrevivencia_conyuge(args.y, args.mujer, args.tabla_benef, rv=args.rv, rp=args.rp,
                                            pasos=args.pasos, **comunes)
         print(f"{v:9.6f}")
@@ -180,7 +193,7 @@ def _ejecutar(args) -> int:
             rp=rp, edad_maxima=args.edad_maxima, saldo=args.saldo, pcent=args.pcent,
             rp0=args.rp0, criter=args.criter, maxiter=args.maxiter, **comunes,
         )
-        print(f"FAJ para {quien}, {tasa}")
+        print(f"FAJ para {quien}, {tasa}" + _nota_edades(afiliado=args.x, conyuge=args.y))
         print(f"{v:9.6f}")
     elif c == "proy":
         r = proyeccion.proyectar_pension(
@@ -194,7 +207,7 @@ def _ejecutar(args) -> int:
             w.writerow(cols)
             w.writerows(zip(*cols.values()))
         else:
-            print(r.descripcion)
+            print(r.descripcion + _nota_edades(afiliado=args.x, conyuge=args.y))
             print("".join(f"{k:>12}" for k in cols))
             for fila in zip(*cols.values()):
                 print("".join(f"{v:12.6f}" for v in fila))
