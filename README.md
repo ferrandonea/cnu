@@ -347,7 +347,8 @@ el sexo; sin él rige el del tipo: cónyuge y conviviente mujer, hijos hombre,
 * **La TITRP vigente.** La SP la publica mediante circular en la página
   [Tasas de interés para el cálculo de los retiros programados y las rentas
   temporales](https://www.spensiones.cl/apps/tasas/tasdescto.php); a
-  septiembre de 2026 rige 3,45% desde julio de 2026 (Circular N° 2.417). En
+  septiembre de 2026 rige 3,45% desde julio de 2026 (Circular N° 2.417;
+  revisado el 15 de septiembre de 2026, ver [Mantención](#mantención)). En
   cada recálculo trimestral se pasa la tasa del trimestre como `rp` (o `--rp`
   en la CLI); para renta vitalicia, la tasa de la póliza en `rv`.
 
@@ -572,6 +573,51 @@ El módulo `cnu` de Stata, escrito fundamentalmente en Mata, se conserva en
 . net install cnu, from(https://cdn.rawgit.com/gvegayon/cnu/a31056b6) replace
 . mata mata mlib query
 ```
+
+## Mantención
+
+### TITRP de referencia (cada trimestre)
+
+El paquete no fija tasa por defecto ni accede a la red: la TITRP es un dato
+de entrada (`rp`). La documentación cita la cifra vigente solo como
+referencia, y hay que contrastarla cada trimestre, cuando la SP publica la
+circular del nuevo período (enero, abril, julio y octubre).
+
+| | |
+|---|---|
+| Dónde la publica la SP | [Tasas de interés para el cálculo de los retiros programados y las rentas temporales](https://www.spensiones.cl/apps/tasas/tasdescto.php) |
+| Circular vigente | N° 2.417, 3,45% desde julio de 2026 |
+| Última revisión | 15 de septiembre de 2026 (sin cambios) |
+
+Lugares que citan la cifra y que hay que actualizar si cambia:
+
+1. README, [Lo que debe entregar el usuario](#lo-que-debe-entregar-el-usuario):
+   la cifra, la circular, la fecha de revisión y el ejemplo
+   `cnu.cnu_afiliado(65, rp=0.0345, agno_actual=2026)   # 14.755007`.
+2. README, [Uso desde Python](#uso-desde-python): el ejemplo de edad
+   actuarial `cnu.cnu_afiliado(65.7, rp=0.0345, agno_actual=2026)   # 14.322867`.
+3. README, [Línea de comandos](#línea-de-comandos): la primera línea de
+   ejemplo (`tasa 3.45%`) y `cnu afil 65.7 --rp 0.0345 --agno-actual 2026`.
+4. Esta tabla (circular vigente y fecha de revisión).
+5. `tests/test_readme.py::test_estado_normativo_y_edad_actuarial` y
+   `tests/test_tasa.py::test_tasa_explicita`, que reproducen los valores
+   14.755007 y 14.322867 con `rp=0.0345`. Los demás tests que usan 0,0345
+   (`test_proyeccion.py`, `test_edad_actuarial.py`, `test_faj_derogado.py`)
+   la usan como tasa cualquiera y no dependen de la circular.
+6. `CHANGELOG.md`: una línea con la cifra, la circular y la fecha de
+   revisión, aunque no haya cambiado.
+
+Para obtener los valores nuevos basta ejecutar los ejemplos con la tasa
+nueva (`uv run cnu afil 65 --rp <tasa> --agno-actual <año>`) y copiar el
+resultado. El comando que verifica que README y tests coinciden es:
+
+```
+uv run pytest tests/test_readme.py tests/test_tasa.py
+```
+
+`tests/test_readme.py::test_defaults_publicos_sin_2013_ni_0_03` y
+`test_ningun_ejemplo_depende_de_una_tasa_por_defecto` garantizan además que
+la actualización no introduzca una tasa por defecto.
 
 ## Referencias
 

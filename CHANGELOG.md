@@ -5,6 +5,20 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
 El formato se basa en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 y el proyecto sigue [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- README: sección "Mantención" con la lista de verificación trimestral de la
+  TITRP de referencia (dónde la publica la SP, circular vigente, lugares del
+  README y tests que citan la cifra y comando que los verifica).
+
+### TITRP de referencia
+
+- Revisada el 15 de septiembre de 2026 contra la página de la SP: sigue
+  vigente 3,45% desde julio de 2026 (Circular N° 2.417); README, ejemplos y
+  tests sin cambios.
+
 ## [0.3.0] — 2026-09-14
 
 Alinea los defaults del paquete con la norma vigente (PRD #8).
