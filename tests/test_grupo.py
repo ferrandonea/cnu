@@ -1,6 +1,9 @@
 """Grupo familiar del Anexo N 7: total como suma de componentes, tramos
 automaticos del articulo 58, exclusiones y cuota mortuoria."""
 
+import warnings
+
+import numpy as np
 import pytest
 
 import cnu
@@ -215,3 +218,112 @@ def test_api_publica():
     assert cnu.TIPOS_BENEFICIARIO == ("conyuge", "conviviente", "hijo", "hijo_invalido", "madre_padre", "padres")
     assert B("conyuge", 63).es_mujer and not B("hijo", 10).es_mujer and B("padres", 88).es_mujer
     assert not B("madre_padre", 45, False).es_mujer
+
+
+# ---------------------------------------------------------------------------
+# Version vectorial: una fila por grupo (afiliado, conyuge y hasta k hijos).
+# ---------------------------------------------------------------------------
+NAN = np.nan
+
+
+def _base():
+    """Base con filas con y sin conyuge, de 0 a 3 hijos, con hijo invalido, y tres filas no calculables."""
+    x = [65, 65, 60, 50, 65, 19, 65]
+    y = [63, NAN, 65, 48, NAN, 63, 63]
+    cot_mujer = [0, 0, 1, 0, 0, 0, 0]
+    cony_mujer = [1, NAN, 0, 1, NAN, 1, 1]
+    hijos = np.array([[10, 14, NAN], [NAN, NAN, NAN], [3, NAN, NAN], [20, 5, 30], [10, NAN, NAN], [10, NAN, NAN],
+                      [NAN, NAN, NAN]])
+    hijos_mujer = np.array([[0, 1, NAN], [NAN] * 3, [0] * 3, [1, 0, 0], [0] * 3, [0] * 3, [0] * 3])
+    hijos_invalidez = np.array([[0, 0, NAN], [NAN] * 3, [0] * 3, [2, 0, 0], [0] * 3, [0] * 3, [0] * 3])
+    rp = [0.03] * 6 + [NAN]
+    return dict(x=x, y=y, hijos=hijos, cot_mujer=cot_mujer, cony_mujer=cony_mujer, hijos_mujer=hijos_mujer,
+                hijos_invalidez=hijos_invalidez, rp=rp, agno_actual=2026)
+
+
+def test_vec_coincide_con_la_escalar_fila_a_fila_y_advierte_las_no_calculables():
+    with pytest.warns(cnu.AdvertenciaCNU) as w:
+        total, comp = cnu.cnu_grupo_familiar_vec(**_base(), componentes=True)
+    esperados = [
+        cnu.cnu_grupo_familiar(A(65), [B("conyuge", 63), B("hijo", 10), B("hijo", 14, True)], **K),
+        cnu.cnu_grupo_familiar(A(65), [], **K),
+        cnu.cnu_grupo_familiar(A(60, True), [B("conyuge", 65, False), B("hijo", 3)], **K),
+        cnu.cnu_grupo_familiar(A(50), [B("conyuge", 48), B("hijo_invalido", 20, True, True), B("hijo", 5), B("hijo", 30)], **K),
+    ]
+    assert total.shape == (7,) and comp.shape == (7, 5)
+    assert total[:4].tolist() == [r.total for r in esperados] == [18.066759, 15.456439, 20.447026, 23.967372]
+    assert np.isnan(total[4:]).all() and np.isnan(comp[4:]).all()
+    # Matriz de componentes: afiliado, conyuge, hijo 1, hijo 2, hijo 3; nan en los ausentes.
+    assert comp[0].tolist() == [c.cnu for c in esperados[0].componentes] + [pytest.approx(NAN, nan_ok=True)]
+    assert comp[1, 0] == 15.456439 and np.isnan(comp[1, 1:]).all()
+    assert comp[2, :3].tolist() == [c.cnu for c in esperados[2].componentes] and np.isnan(comp[2, 3:]).all()
+    assert comp[3].tolist() == [c.cnu for c in esperados[3].componentes]
+    assert comp[3, 4] == 0.0  # hijo de 30: sin derecho, aporta 0 pero esta presente
+    assert comp[3, 2] == cnu.cnu_hijo_invalido(50, 20, hijo_mujer=True, parcial=True, **K)
+    np.testing.assert_allclose(np.nansum(comp[:4], axis=1), total[:4], atol=1e-6)
+    # Una sola advertencia con los tres motivos: hijos sin conyuge (0,5/n), menor de 20 y sin tasa.
+    assert len(w) == 1
+    msg = str(w[0].message)
+    assert "menos de 20 años (1): 5" in msg
+    assert "sin tasa" in msg and "(1): 6" in msg
+    assert "no admite o el paquete no cubre" in msg and "0,5/n" in msg and "(1): 4" in msg
+
+
+def test_vec_escalares_formas_y_defaults():
+    # Escalares y un solo hijo como columna; cony_mujer es True por defecto (como en la escalar).
+    assert cnu.cnu_grupo_familiar_vec(65, 63, 10, **K).tolist() == [18.001136]
+    assert cnu.cnu_grupo_familiar_vec([65, 65], [63, 63], [10, NAN], **K).tolist() == [18.001136, 17.949717]
+    assert cnu.cnu_grupo_familiar_vec([65, 65], [63, 63], [[10], [NAN]], **K).tolist() == [18.001136, 17.949717]
+    # Sin conyuge ni hijos: solo el afiliado.
+    v = cnu.cnu_grupo_familiar_vec([65, 70], **K)
+    assert v.tolist() == [cnu.cnu_afiliado(65, **K), cnu.cnu_afiliado(70, **K)]
+    total, comp = cnu.cnu_grupo_familiar_vec([65, 70], componentes=True, **K)
+    assert comp.shape == (2, 2) and np.isnan(comp[:, 1]).all()
+    # x nan (sin sobrevivencia) o excluida con incluir: nan sin advertencia.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        v = cnu.cnu_grupo_familiar_vec([NAN, 65, 65], 63, incluir=[1, 1, 0], **K)
+    assert np.isnan(v[0]) and v[1] == 17.949717 and np.isnan(v[2])
+    # Grado de invalidez desconocido y formas incompatibles: ValueError inmediato.
+    with pytest.raises(ValueError, match="hijos_invalidez"):
+        cnu.cnu_grupo_familiar_vec(65, 63, 10, hijos_invalidez=3, **K)
+    with pytest.raises(ValueError, match="hijos_mujer"):
+        cnu.cnu_grupo_familiar_vec([65, 65], 63, [[10, 5], [10, NAN]], hijos_mujer=[1, 0], **K)
+    with pytest.raises(ValueError, match="hijos"):
+        cnu.cnu_grupo_familiar_vec([65, 65], 63, [[10, 5, 1]], **K)
+
+
+def test_vec_sobrevivencia_cuota_mortuoria_y_rangos():
+    # sobrevivencia por fila: x no interviene y se usan las variantes cnu_sobrevivencia_*.
+    total, comp = cnu.cnu_grupo_familiar_vec([NAN, 65], [63, 63], 10, hijos_mujer=True, sobrevivencia=[True, False],
+                                             componentes=True, **K)
+    assert total[0] == cnu.cnu_grupo_familiar(None, [B("conyuge", 63), B("hijo", 10, True)], **K).total == 11.298419
+    assert np.isnan(comp[0, 0]) and comp[0, 1] == cnu.cnu_sobrevivencia_conyuge_con_hijos(63, 10, mujer=True, **K)
+    assert total[1] == cnu.cnu_grupo_familiar(A(65), [B("conyuge", 63), B("hijo", 10, True)], **K).total == 18.001325
+    # Sobrevivencia sin beneficiarios: nan con el motivo de la escalar.
+    with pytest.warns(cnu.AdvertenciaCNU, match="sin beneficiarios"):
+        v = cnu.cnu_grupo_familiar_vec([NAN, NAN], [63, NAN], sobrevivencia=True, **K)
+    assert v[0] == cnu.cnu_sobrevivencia_conyuge(63, mujer=True, **K) and np.isnan(v[1])
+    # valor_uf (escalar o columna): cuota mortuoria como ultima columna; nan la omite en esa fila.
+    total, comp = cnu.cnu_grupo_familiar_vec([65, 65], [63, 63], [10, NAN], valor_uf=[1, NAN], componentes=True, **K)
+    assert comp.shape == (2, 4) and comp[0, 3] == 15.0 and np.isnan(comp[1, 3])
+    assert total.tolist() == [33.001136, 17.949717]
+    assert cnu.cnu_grupo_familiar_vec(65, 63, 10, valor_uf=1, **K).tolist() == [33.001136]
+    # Rangos: afiliado y conyuge en [20, 110], hijos desde 0; cada fila con su motivo.
+    with pytest.warns(cnu.AdvertenciaCNU) as w:
+        v = cnu.cnu_grupo_familiar_vec([111, 65, 65, 65], [63, 19, 111, 63], [[10], [10], [10], [-1]], **K)
+    assert np.isnan(v).all() and len(w) == 1
+    msg = str(w[0].message)
+    assert "cotizantes tienen más de 110 años (1): 0" in msg
+    assert "cónyuges tienen menos de 20 años (1): 1" in msg
+    assert "cónyuges tienen más de 110 años (1): 2" in msg
+    assert "hijos tienen edad negativa (1): 3" in msg
+    # Vector inexistente por fila.
+    with pytest.warns(cnu.AdvertenciaCNU, match="vector inexistente"):
+        v = cnu.cnu_grupo_familiar_vec([65, 65], 63, agno_vector=[1999, 2013], agno_actual=2013)
+    assert np.isnan(v[0]) and v[1] == cnu.cnu_grupo_familiar(A(65), [B("conyuge", 63)], agno_vector=2013, agno_actual=2013).total
+
+
+def test_vec_exportada():
+    assert "cnu_grupo_familiar_vec" in cnu.__all__ and cnu.GRADOS_INVALIDEZ == (0, 1, 2)
+    assert (cnu.GRADO_NO_INVALIDO, cnu.GRADO_INVALIDO_TOTAL, cnu.GRADO_INVALIDO_PARCIAL) == (0, 1, 2)

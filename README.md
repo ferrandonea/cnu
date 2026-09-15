@@ -174,11 +174,11 @@ sobre variables (`cnu_afil`, `cnu_cnyg_s_h`, `cnu_sobr_cnyg_s_h`, `cnu_faj`);
 `cnu_hijo_vec`, `cnu_sobrevivencia_hijo_vec`, `cnu_hijo_invalido_vec`,
 `cnu_sobrevivencia_hijo_invalido_vec`, `cnu_conyuge_con_hijos_vec`,
 `cnu_sobrevivencia_conyuge_con_hijos_vec`, `cnu_madre_padre_vec`,
-`cnu_sobrevivencia_madre_padre_vec`, `cnu_padres_vec` y
-`cnu_sobrevivencia_padres_vec` no tienen comando equivalente.
-Cada argumento puede ser un escalar o un arreglo con un valor por fila. La
-tabla `"vigente"` se resuelve fila a fila con el sexo, el `agno_actual` y el
-`fsiniestro` de cada observación.
+`cnu_sobrevivencia_madre_padre_vec`, `cnu_padres_vec`,
+`cnu_sobrevivencia_padres_vec` y `cnu_grupo_familiar_vec` no tienen comando
+equivalente. Cada argumento puede ser un escalar o un arreglo con un valor
+por fila. La tabla `"vigente"` se resuelve fila a fila con el sexo, el
+`agno_actual` y el `fsiniestro` de cada observación.
 
 ```python
 import numpy as np
@@ -192,6 +192,17 @@ cnu.cnu_conyuge_con_hijos_vec(edades, [53, 63, 73], [3, 12, 25], cony_mujer=True
 cnu.cnu_madre_padre_vec(edades, [50, 60, 70], [3, 12, np.nan], rp=0.03)              # fila 2 (nan): sin hijos, 36%
 cnu.cnu_padres_vec(edades, [80, 88, 95], madre=[1, 0, 1], rp=0.03)                   # un padre o madre por fila
 cnu.faj_afiliado_vec(edades, rp=0.03)
+
+# Grupo familiar por fila: afiliado, cónyuge o conviviente (nan = sin cónyuge) y hasta k hijos (matriz N x k, nan = ausente).
+hijos = np.array([[10, 14, np.nan], [np.nan, np.nan, np.nan], [3, np.nan, np.nan]])
+cnu.cnu_grupo_familiar_vec(edades, [53, np.nan, 73], hijos, hijos_mujer=[[0, 1, 0]] * 3, rp=0.03, agno_actual=2026)
+# array([21.94064 , 15.456439, 13.697482])   cada fila coincide con cnu_grupo_familiar con los mismos beneficiarios
+total, comp = cnu.cnu_grupo_familiar_vec(edades, [53, np.nan, 73], hijos, hijos_invalidez=[[0, 0, 0], [0, 0, 0], [2, 0, 0]],
+                                         rp=0.03, agno_actual=2026, componentes=True)
+comp   # N x (2 + k): afiliado, cónyuge, hijo 1, hijo 2, hijo 3 (nan = ausente); fila 2: hijo inválido parcial (grado 2)
+# array([[19.728818,  2.132981,  0.052515,  0.026281,       nan],
+#        [15.456439,       nan,       nan,       nan,       nan],
+#        [10.706354,  2.124165,  2.20031 ,       nan,       nan]])
 ```
 
 La tasa se resuelve fila a fila con la misma regla que las funciones
@@ -199,7 +210,14 @@ escalares (`rv`, `rp`, `agno_vector` o `fsiniestro` anterior a 2014 de cada
 observación). Las filas con edad fuera de [20, 110] (negativa en el caso de
 los hijos, que se calculan desde los 0 años), sin tasa determinable o con
 vector de tasas inexistente quedan en `nan` y se emite una advertencia
-`cnu.AdvertenciaCNU` con los índices y el motivo.
+`cnu.AdvertenciaCNU` con los índices y el motivo. En `cnu_grupo_familiar_vec`
+también quedan en `nan`, con su motivo, las filas cuyo grupo la norma no
+admite o el paquete no cubre (hijos con derecho sin cónyuge, sobrevivencia
+sin beneficiarios); `sobrevivencia=True` (escalar o columna) marca las filas
+sin afiliado y `valor_uf` agrega la cuota mortuoria como última columna. Los
+grupos con madre o padre de hijos no matrimoniales o con padres del afiliado
+se calculan con las vectoriales individuales (`cnu_madre_padre_vec`,
+`cnu_padres_vec` y sus variantes de sobrevivencia).
 
 ### Opciones comunes
 
@@ -217,6 +235,7 @@ vector de tasas inexistente quedan en `nan` y se emite una advertencia
 | `conviviente` | `True` si el beneficiario de las funciones del cónyuge es conviviente civil (Ley N° 20.830): misma fórmula y mismo valor; documenta el rol. |
 | `afiliado`, `beneficiarios` (grupo familiar) | `cnu.Afiliado(edad, mujer)` (o una tupla, o `None` en sobrevivencia) y lista de `cnu.Beneficiario(tipo, edad, mujer=None, parcial=False)` con `tipo` en `cnu.TIPOS_BENEFICIARIO` (`conyuge`, `conviviente`, `hijo`, `hijo_invalido`, `madre_padre`, `padres`); `mujer=None` usa el sexo por defecto del tipo (cónyuge mujer, hijo hombre, madre). |
 | `valor_uf` (grupo familiar) | Valor de la UF en las unidades del saldo; si se entrega, la cuota mortuoria (15 UF) se agrega como componente separado. |
+| `x`, `y`, `hijos` (grupo familiar vectorial) | Edad del afiliado, del cónyuge o conviviente (`nan` = sin cónyuge) y matriz `N x k` con la edad de cada hijo (`nan` = ausente; una columna de largo `N` es un solo hijo). `cot_mujer`, `cony_mujer` (mujer por defecto) fijan el sexo; `hijos_mujer` y `hijos_invalidez` (`cnu.GRADO_NO_INVALIDO` 0, `cnu.GRADO_INVALIDO_TOTAL` 1, `cnu.GRADO_INVALIDO_PARCIAL` 2) tienen la forma de `hijos` o son escalares. `sobrevivencia` marca las filas sin afiliado y `componentes=True` devuelve además la matriz de aportes. |
 | `agno_vector` | Año del vector de tasas para Retiro Programado. Sin él, solo un `fsiniestro` anterior a 2014 usa por defecto el vector de su año. |
 | `agno_actual` | Año de cálculo; ajusta las tablas por mejoramiento y, sin `fsiniestro`, fija la tabla vigente al 31 de diciembre de ese año (por defecto, el año actual). |
 | `rv` | Tasa de renta vitalicia. Si se entrega, el CNU es de RV. |
@@ -354,6 +373,7 @@ históricos: con fecha de cálculo igual o posterior a `cnu.DEROGACION_FAJ`
 | Sobrevivencia de cónyuge sin hijos (`cnu_sobrevivencia_conyuge`, letra 1.a) | |
 | Grupo familiar completo: CNU total como suma del afiliado y de cada beneficiario de la lista, con los tramos del artículo 58 decididos desde los hijos con derecho (`cnu_grupo_familiar`, `cnu grupo`) | |
 | Cuota mortuoria de 15 UF (`CUOTA_MORTUORIA_UF`), componente opcional del grupo familiar en las unidades del saldo (`valor_uf`) | |
+| Grupo familiar vectorial: afiliado, cónyuge o conviviente y hasta `k` hijos por fila, con total y matriz de componentes (`cnu_grupo_familiar_vec`); los grupos con madre o padre no matrimonial o con padres del afiliado se calculan con las vectoriales individuales | |
 | Cónyuge con hijos con derecho a pensión: 50% hasta los 24 años del hijo menor y 60% después, o 50% vitalicio con algún hijo inválido, pensión de vejez o invalidez (`cnu_conyuge_con_hijos`, letras 2.c y 2.d) | |
 | Sobrevivencia de cónyuge con hijos (`cnu_sobrevivencia_conyuge_con_hijos`, letras 1.b y 1.c) | |
 | Conviviente civil sin hijos o con hijos comunes (`conviviente=True` en las funciones del cónyuge; letras 1.l, 1.n, 1.p, 2.m, 2.o y 2.q, misma fórmula con `a` en lugar de `y`) | |

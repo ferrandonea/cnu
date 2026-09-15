@@ -3,8 +3,9 @@
 Equivalen a los comandos ``cnu_afil``, ``cnu_cnyg_s_h`` y ``cnu_sobr_cnyg_s_h``
 de Stata (mas las del hijo no invalido, del hijo invalido, del conyuge con
 hijos, de la madre o el padre de hijos no matrimoniales y de los padres del
-afiliado, sin comando equivalente): cada argumento puede ser un escalar (se aplica a todas las
-filas) o un arreglo de largo ``N``. Las filas que no se pueden calcular (edad
+afiliado, sin comando equivalente; y :func:`cnu_grupo_familiar_vec`, el
+grupo familiar completo de cada fila): cada argumento puede ser un escalar
+(se aplica a todas las filas) o un arreglo de largo ``N``. Las filas que no se pueden calcular (edad
 fuera de [20, 110], o negativa en el caso de los hijos; sin tasa determinable;
 vector de tasas inexistente; o excluidas con ``incluir``) quedan en ``nan`` y
 se emite un :class:`AdvertenciaCNU` con el detalle.
@@ -31,11 +32,19 @@ from collections.abc import Callable
 
 import numpy as np
 
-from . import core
+from . import core, grupo
 from .core import AGNO_VECTOR, EDAD_MAXIMA, EDAD_MINIMA, EDAD_MINIMA_HIJO, TABLA_AFILIADO, TABLA_BENEFICIARIO
 from .tablas import existe_vector_tasas
 
 MAX_LISTADO = 20
+
+# Grado de invalidez de cada hijo en ``cnu_grupo_familiar_vec`` (columna
+# ``hijos_invalidez``): no invalido (15% hasta los 24 agnos), invalido total
+# (15% vitalicio, tabla MI) o invalido parcial (15% hasta los 24 y 11% despues).
+GRADO_NO_INVALIDO = 0
+GRADO_INVALIDO_TOTAL = 1
+GRADO_INVALIDO_PARCIAL = 2
+GRADOS_INVALIDEZ = (GRADO_NO_INVALIDO, GRADO_INVALIDO_TOTAL, GRADO_INVALIDO_PARCIAL)
 
 
 class AdvertenciaCNU(UserWarning):
@@ -918,6 +927,183 @@ def cnu_sobrevivencia_padres_vec(
     return cnu
 
 
+def _matriz(valor, n: int, k: int, nombre: str) -> np.ndarray:
+    """Expande ``valor`` a una matriz de floats ``n x k`` (una columna por hijo).
+
+    Acepta un escalar (se aplica a todas las celdas), una columna de largo
+    ``n`` cuando ``k == 1`` o una matriz ``n x k``; ``None`` es todo ``nan``.
+    """
+    if valor is None:
+        return np.full((n, k), np.nan)
+    arr = np.asarray(valor, dtype=float)
+    if arr.ndim == 0:
+        return np.full((n, k), arr.item())
+    if arr.ndim == 1 and k == 1 and arr.shape == (n,):
+        return arr.reshape(n, 1)
+    if arr.shape != (n, k):
+        raise ValueError(f"Se esperaba para {nombre} una matriz de forma ({n}, {k}), se recibio una de forma {arr.shape}")
+    return arr
+
+
+def _hijos(hijos, n: int) -> np.ndarray:
+    """Edades de los hijos como matriz ``n x k``: ``None`` es ``k = 0``, un
+    escalar o una columna de largo ``n`` es ``k = 1`` y una matriz fija ``k``."""
+    if hijos is None:
+        return np.empty((n, 0))
+    arr = np.asarray(hijos, dtype=float)
+    k = 1 if arr.ndim <= 1 else arr.shape[1]
+    return _matriz(arr, n, k, "hijos")
+
+
+def cnu_grupo_familiar_vec(
+    x,
+    y=None,
+    hijos=None,
+    cot_mujer=False,
+    cony_mujer=True,
+    hijos_mujer=False,
+    hijos_invalidez=GRADO_NO_INVALIDO,
+    sobrevivencia=False,
+    valor_uf=None,
+    tabla=TABLA_AFILIADO,
+    tabla_benef=TABLA_BENEFICIARIO,
+    agno_vector=AGNO_VECTOR,
+    agno_actual=None,
+    rv=None,
+    rp=None,
+    fsiniestro=0,
+    incluir=None,
+    dir_tablas=None,
+    dir_vectores=None,
+    componentes=False,
+):
+    """CNU total del grupo familiar de cada fila (afiliado, conyuge o
+    conviviente civil y hasta ``k`` hijos); vease
+    :func:`cnu.cnu_grupo_familiar`, con la que coincide fila a fila.
+
+    Cada fila describe un grupo con columnas: la edad del afiliado ``x`` (y
+    su sexo ``cot_mujer``), la edad del conyuge o conviviente civil ``y``
+    (``nan`` si no hay; sexo ``cony_mujer``, mujer por defecto como en la
+    funcion escalar; el conviviente civil usa la misma columna, misma
+    formula) y las edades de los hijos ``hijos``, una matriz ``N x k`` con
+    una columna por hijo (``nan`` en los ausentes; ``k`` lo fijan las
+    columnas entregadas; una columna de largo ``N`` es un solo hijo y
+    ``None`` ninguno). ``hijos_mujer`` (``False`` por defecto) y
+    ``hijos_invalidez`` (:data:`GRADO_NO_INVALIDO` = 0,
+    :data:`GRADO_INVALIDO_TOTAL` = 1 o :data:`GRADO_INVALIDO_PARCIAL` = 2)
+    tienen la misma forma que ``hijos`` o son escalares; ``nan`` en ellos
+    equivale al valor por defecto. Los tramos 50%/60% del conyuge se deciden
+    desde los hijos de la fila, como en la funcion escalar; los hijos de 24 o
+    mas aportan 0 y no cuentan.
+
+    ``sobrevivencia`` (escalar o columna de booleanos) marca las filas de
+    pension de sobrevivencia: ``x`` no interviene (afiliado ``None``) y se
+    usan las variantes ``cnu_sobrevivencia_*``. ``valor_uf`` (escalar o
+    columna) agrega la cuota mortuoria (:data:`cnu.CUOTA_MORTUORIA_UF`) como
+    ultimo componente; ``nan`` en una fila la omite.
+
+    Las filas no calculables quedan en ``nan`` y se acumulan en una
+    :class:`AdvertenciaCNU` con el motivo: edad del afiliado o del conyuge
+    fuera de [20, 110], hijo con edad negativa, sin tasa determinable o vector
+    inexistente, y los grupos que :func:`cnu.cnu_grupo_familiar` rechaza con
+    :class:`cnu.ErrorGrupoFamiliar` (hijos con derecho sin conyuge, cuyo
+    porcentaje 0,15 + 0,5/n no esta cubierto; sobrevivencia sin
+    beneficiarios). Las filas con ``x`` ``nan`` (sin sobrevivencia) o
+    excluidas con ``incluir`` quedan en ``nan`` sin advertencia. Los grupos
+    con madre o padre de hijos no matrimoniales o con padres del afiliado se
+    calculan con :func:`cnu_madre_padre_vec` y :func:`cnu_padres_vec`.
+
+    Devuelve el total por fila (arreglo de largo ``N``). Con
+    ``componentes=True`` devuelve la tupla ``(total, matriz)``, donde
+    ``matriz`` es ``N x m`` con el aporte de cada componente en el orden
+    afiliado, conyuge, hijos (una columna por hijo, en el orden de ``hijos``)
+    y, si se entrego ``valor_uf``, la cuota mortuoria; los componentes
+    ausentes quedan en ``nan`` (los hijos sin derecho aportan 0) y la fila
+    entera en ``nan`` cuando no es calculable. El total es la suma de los
+    componentes presentes, redondeada a seis decimales como la escalar.
+    """
+    x = np.atleast_1d(np.asarray(x, dtype=float))
+    n = len(x)
+    y = _columna(y, n)
+    h = _hijos(hijos, n)
+    k = h.shape[1]
+    h_mujer = _matriz(hijos_mujer, n, k, "hijos_mujer")
+    h_grado = _matriz(hijos_invalidez, n, k, "hijos_invalidez")
+    grados = np.unique(h_grado[~np.isnan(h_grado)])
+    if not set(grados.tolist()) <= set(GRADOS_INVALIDEZ):
+        raise ValueError(f"hijos_invalidez admite {GRADOS_INVALIDEZ} (no invalido, total, parcial); "
+                         f"se recibio {sorted(set(grados.tolist()) - set(GRADOS_INVALIDEZ))}")
+    a = _preparar(n, cot_mujer=cot_mujer, sobrevivencia=sobrevivencia, valor_uf=valor_uf, tabla=tabla,
+                  tabla_benef=tabla_benef, agno_vector=agno_vector, agno_actual=agno_actual, rv=rv, rp=rp,
+                  fsiniestro=fsiniestro, incluir=incluir)
+    cony = _columna(cony_mujer, n)
+    con_cuota = valor_uf is not None
+    matriz = np.full((n, 2 + k + int(con_cuota)), np.nan)
+    total = np.full(n, np.nan)
+    errores: dict[str, list[int]] = {
+        "menor_20_cot": [], "menor_20_cony": [], "mayor_110_cot": [], "mayor_110_cony": [], "negativa_hijo": [],
+        "sin_tasa": [], "vector": [],
+    }
+    prohibidos: dict[str, list[int]] = {}
+    for j in range(n):
+        sobrev = bool(a["sobrevivencia"][j])
+        if not a["incluir"][j] or (not sobrev and math.isnan(x[j])):
+            continue
+        ex = None if sobrev else core.edad_entera(x[j])
+        ey = None if math.isnan(y[j]) else core.edad_entera(y[j])
+        presentes = [i for i in range(k) if not math.isnan(h[j, i])]
+        rv_j, rp_j = _opcional(a["rv"][j]), _opcional(a["rp"][j])
+        if ex is not None and ex < EDAD_MINIMA:
+            errores["menor_20_cot"].append(j)
+        elif ey is not None and ey < EDAD_MINIMA:
+            errores["menor_20_cony"].append(j)
+        elif ex is not None and ex > EDAD_MAXIMA:
+            errores["mayor_110_cot"].append(j)
+        elif ey is not None and ey > EDAD_MAXIMA:
+            errores["mayor_110_cony"].append(j)
+        elif any(core.edad_entera(h[j, i]) < EDAD_MINIMA_HIJO for i in presentes):
+            errores["negativa_hijo"].append(j)
+        elif (motivo := _motivo_sin_tasa(a, j, rv_j, rp_j, dir_vectores)) is not None:
+            errores[motivo].append(j)
+        else:
+            afiliado = None if sobrev else grupo.Afiliado(ex, bool(a["cot_mujer"][j]))
+            benef: list[grupo.Beneficiario] = []
+            if ey is not None:
+                benef.append(grupo.Beneficiario(grupo.TIPO_CONYUGE, ey, True if math.isnan(cony[j]) else bool(cony[j])))
+            for i in presentes:
+                grado = GRADO_NO_INVALIDO if math.isnan(h_grado[j, i]) else int(h_grado[j, i])
+                mujer = False if math.isnan(h_mujer[j, i]) else bool(h_mujer[j, i])
+                tipo = grupo.TIPO_HIJO if grado == GRADO_NO_INVALIDO else grupo.TIPO_HIJO_INVALIDO
+                benef.append(grupo.Beneficiario(tipo, core.edad_entera(h[j, i]), mujer, grado == GRADO_INVALIDO_PARCIAL))
+            try:
+                r = grupo.cnu_grupo_familiar(
+                    afiliado, benef, _opcional(a["valor_uf"][j]), a["tabla"][j], a["tabla_benef"][j],
+                    _entero_o_nan(a["agno_vector"][j]), _entero_o_nan(a["agno_actual"][j]), rv_j, rp_j,
+                    int(a["fsiniestro"][j]), False, dir_tablas, dir_vectores,
+                )
+            except grupo.ErrorGrupoFamiliar as e:
+                prohibidos.setdefault(str(e), []).append(j)
+                continue
+            columnas = ([] if sobrev else [0]) + ([] if ey is None else [1]) + [2 + i for i in presentes]
+            valores = [c.cnu for c in r.componentes]
+            if con_cuota and r.componentes and r.componentes[-1].tipo == "cuota_mortuoria":
+                columnas.append(2 + k)
+            matriz[j, columnas] = valores
+            total[j] = r.total
+    errores.update({f"prohibido:{m}": idx for m, idx in prohibidos.items()})
+    _advertir(errores, {
+        "menor_20_cot": "Los siguientes cotizantes tienen menos de 20 años",
+        "menor_20_cony": "Los siguientes cónyuges tienen menos de 20 años",
+        "mayor_110_cot": "Los siguientes cotizantes tienen más de 110 años",
+        "mayor_110_cony": "Los siguientes cónyuges tienen más de 110 años",
+        "negativa_hijo": "Los siguientes hijos tienen edad negativa",
+        **MENSAJES_TASA,
+        **{f"prohibido:{m}": f"Las siguientes observaciones forman un grupo que la norma no admite o el paquete "
+                             f"no cubre ({m})" for m in prohibidos},
+    })
+    return (total, matriz) if componentes else total
+
+
 def _preparar(n: int, **kw) -> dict[str, np.ndarray]:
     """Expande todos los argumentos a columnas de largo ``n``."""
     out = {}
@@ -926,7 +1112,8 @@ def _preparar(n: int, **kw) -> dict[str, np.ndarray]:
             out[k] = _columna(v, n, dtype=object)
         elif k == "incluir":
             out[k] = np.ones(n, dtype=bool) if v is None else _columna(v, n, dtype=bool)
-        elif k in ("mujer", "cot_mujer", "cony_mujer", "hijo_mujer", "madre", "parcial", "hijo_invalido", "conviviente"):
+        elif k in ("mujer", "cot_mujer", "cony_mujer", "hijo_mujer", "madre", "parcial", "hijo_invalido", "conviviente",
+                   "sobrevivencia"):
             out[k] = _columna(v, n, dtype=bool)
         else:
             out[k] = _columna(v, n)
@@ -934,10 +1121,15 @@ def _preparar(n: int, **kw) -> dict[str, np.ndarray]:
 
 
 __all__: list[str] = [
+    "GRADO_INVALIDO_PARCIAL",
+    "GRADO_INVALIDO_TOTAL",
+    "GRADO_NO_INVALIDO",
+    "GRADOS_INVALIDEZ",
     "AdvertenciaCNU",
     "cnu_afiliado_vec",
     "cnu_conyuge_con_hijos_vec",
     "cnu_conyuge_vec",
+    "cnu_grupo_familiar_vec",
     "cnu_hijo_invalido_vec",
     "cnu_hijo_vec",
     "cnu_madre_padre_vec",

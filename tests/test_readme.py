@@ -92,6 +92,19 @@ def test_vectorial_por_fsiniestro():
     assert (v > 0).all() and v[2] == cnu.cnu_madre_padre(75, 70, rp=0.03, agno_actual=2026)
     v = cnu.cnu_padres_vec(edades, [80, 88, 95], madre=[1, 0, 1], rp=0.03, agno_actual=2026)
     assert (v > 0).all() and v[1] == cnu.cnu_padres(65, 88, madre=False, rp=0.03, agno_actual=2026)
+    hijos = np.array([[10, 14, np.nan], [np.nan, np.nan, np.nan], [3, np.nan, np.nan]])
+    v = cnu.cnu_grupo_familiar_vec(edades, [53, np.nan, 73], hijos, hijos_mujer=[[0, 1, 0]] * 3, rp=0.03, agno_actual=2026)
+    np.testing.assert_allclose(v, [21.94064, 15.456439, 13.697482])
+    assert v[0] == cnu.cnu_grupo_familiar(cnu.Afiliado(55), [("conyuge", 53), ("hijo", 10), ("hijo", 14, True)],
+                                          rp=0.03, agno_actual=2026).total
+    total, comp = cnu.cnu_grupo_familiar_vec(edades, [53, np.nan, 73], hijos, hijos_invalidez=[[0, 0, 0], [0, 0, 0], [2, 0, 0]],
+                                             rp=0.03, agno_actual=2026, componentes=True)
+    np.testing.assert_allclose(total, [21.940595, 15.456439, 15.030829])
+    esperado = np.array([[19.728818, 2.132981, 0.052515, 0.026281, np.nan],
+                         [15.456439, np.nan, np.nan, np.nan, np.nan],
+                         [10.706354, 2.124165, 2.20031, np.nan, np.nan]])
+    np.testing.assert_allclose(comp, esperado)
+    assert comp.shape == (3, 5)
 
 
 def test_selector_y_tabla_bidimensional():
