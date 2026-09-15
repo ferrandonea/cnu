@@ -33,6 +33,23 @@ def test_ejemplos_actuales_tm2020():
     assert cnu.cnu_padres(65, 88, rp=0.03, agno_actual=2026) == 0.161421
     assert cnu.cnu_padres(65, 88, madre=False, rp=0.03, agno_actual=2026) == 0.115149
     assert cnu.cnu_sobrevivencia_padres(88, rp=0.03, agno_actual=2026) == 3.089039
+    g = cnu.cnu_grupo_familiar(cnu.Afiliado(65), [cnu.Beneficiario("conyuge", 63), cnu.Beneficiario("hijo", 10)],
+                               rp=0.03, agno_actual=2026)
+    assert g.total == 18.001136
+    assert [c.cnu for c in g.componentes] == [15.456439, 2.409035, 0.135662]
+    assert [c.etiqueta for c in g.componentes] == ["afiliado", "cónyuge con hijos 50%/60%", "hijo no inválido 15%"]
+    assert g.componentes[1].porcentajes == (0.5, 0.6)
+    assert g.descripcion == ("CNU RP para grupo familiar: afiliado, cónyuge con hijos 50%/60%, hijo no inválido 15% "
+                             "(tablas cb2020h b2020m), tasa 3% en el año 2026")
+    assert cnu.cnu_grupo_familiar(cnu.Afiliado(65), [("conyuge", 63), ("hijo", 10), ("hijo_invalido", 20)],
+                                  rp=0.03, agno_actual=2026).componentes[1].etiqueta == "cónyuge con hijo inválido 50%"
+    assert cnu.cnu_grupo_familiar(None, [("conyuge", 63), ("hijo", 10, True)], rp=0.03, agno_actual=2026).total == 11.298419
+    assert cnu.cnu_grupo_familiar(cnu.Afiliado(65), [("conyuge", 63), ("hijo", 10)], valor_uf=1,
+                                  rp=0.03, agno_actual=2026).total == 33.001136
+    assert cnu.CUOTA_MORTUORIA_UF == 15
+    with pytest.raises(cnu.ErrorGrupoFamiliar, match="articulo 58"):
+        cnu.cnu_grupo_familiar(cnu.Afiliado(65), [("padres", 88), ("conyuge", 63)], rp=0.03, agno_actual=2026)
+    assert g.to_dict()["componentes"][2]["cnu"] == 0.135662
     assert cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2026) == pytest.approx(0.037205, abs=1e-6)
     assert cnu.faj_afiliado(65, 62, rp=0.03, agno_vector=2013, agno_actual=2026) == pytest.approx(0.004659, abs=1e-6)
     p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, agno_actual=2026)
@@ -125,6 +142,12 @@ def test_cli_ejemplo(capsys):
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "CNU RP para madre del afiliado 50% (tablas cb2020h b2020m), tasa 3% en el año 2026"
     assert out[1].strip() == "0.161421"
+    assert main(["grupo", "--afiliado", "65", "--conyuge", "63", "--hijo", "10", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == ("CNU RP para grupo familiar: afiliado, cónyuge con hijos 50%/60%, hijo no inválido 15% "
+                      "(tablas cb2020h b2020m), tasa 3% en el año 2026")
+    assert [l.split()[-1] for l in out[1:]] == ["15.456439", "2.409035", "0.135662", "18.001136"]
+    assert out[4].split()[0] == "total"
 
 
 def test_estado_normativo_y_edad_actuarial():

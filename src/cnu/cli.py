@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sys
 import warnings
 
-from . import __version__, core, faj as _faj, proyeccion, tablas
+from . import __version__, core, faj as _faj, grupo as _grupo, proyeccion, tablas
+from .grupo import etiqueta_conyuge, etiqueta_hijo_invalido, etiqueta_madre_padre, etiqueta_padres  # noqa: F401
 
 
 def _opciones_comunes(p: argparse.ArgumentParser, benef: bool, afil: bool = True) -> None:
@@ -180,6 +182,27 @@ def construir_parser() -> argparse.ArgumentParser:
     _opciones_comunes(p, benef=True, afil=False)
     _opciones_tasa(p)
 
+    p = sub.add_parser("grupo", help="CNU total de un grupo familiar con el aporte de cada beneficiario (Anexo N° 7);"
+                                     " sin --afiliado, pensión de sobrevivencia")
+    p.add_argument("--afiliado", type=_persona, default=None, metavar="EDAD[h|m]",
+                   help="edad y sexo del afiliado (p.ej. 65 o 60m; por defecto hombre); sin él, sobrevivencia")
+    p.add_argument("--conyuge", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
+                   help="cónyuge (por defecto mujer; 62m, 65h)")
+    p.add_argument("--conviviente", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
+                   help="conviviente civil (misma fórmula que el cónyuge; por defecto mujer)")
+    p.add_argument("--hijo", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
+                   help="hijo no inválido, repetible (por defecto hombre; 10, 14m)")
+    p.add_argument("--hijo-inv", type=_persona, action="append", default=[], nargs="+", metavar="EDAD[h|m] [total|parcial]",
+                   help="hijo inválido, repetible: edad y sexo más el grado (por defecto total; 20 total, 21m parcial)")
+    p.add_argument("--madre-padre", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
+                   help="madre (m, por defecto) o padre (h) de hijos de filiación no matrimonial, repetible")
+    p.add_argument("--padres", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
+                   help="madre (m, por defecto) o padre (h) del afiliado, repetible (a lo más uno de cada uno)")
+    p.add_argument("--uf", type=float, default=None, metavar="VALOR_UF",
+                   help="valor de la UF en las unidades del saldo: agrega la cuota mortuoria (15 UF) como componente")
+    _opciones_comunes(p, benef=True)
+    _opciones_tasa(p)
+
     p = sub.add_parser("faj", help="Factor de Ajuste (cnu_faji); derogado desde el 1-2-2022 (Ley 21.419)")
     p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
     p.add_argument("y", type=float, nargs="?", default=None,
@@ -207,6 +230,42 @@ def construir_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_PERSONA = re.compile(r"^(\d+(?:\.\d+)?)([hm])?$", re.IGNORECASE)
+
+
+def _persona(texto: str):
+    """``EDAD[h|m]`` -> ``(edad, mujer)``; ``mujer`` es ``None`` sin sufijo (sexo por defecto del tipo).
+
+    Los tokens ``total`` y ``parcial`` (grado del hijo inválido) se devuelven tal cual."""
+    if texto.lower() in ("total", "parcial"):
+        return texto.lower()
+    m = _PERSONA.match(texto.strip())
+    if not m:
+        raise argparse.ArgumentTypeError(f"se esperaba una edad con sufijo opcional h o m (p.ej. 62m), no {texto!r}")
+    sexo = m.group(2)
+    return float(m.group(1)), None if sexo is None else sexo.lower() == "m"
+
+
+def _beneficiarios_cli(args) -> list:
+    """Lista de :class:`cnu.Beneficiario` a partir de las opciones repetibles de ``cnu grupo``."""
+    benef = []
+    for tipo, personas in ((_grupo.TIPO_CONYUGE, args.conyuge), (_grupo.TIPO_CONVIVIENTE, args.conviviente),
+                           (_grupo.TIPO_HIJO, args.hijo), (_grupo.TIPO_MADRE_PADRE, args.madre_padre),
+                           (_grupo.TIPO_PADRES, args.padres)):
+        benef.extend(_grupo.Beneficiario(tipo, edad, mujer) for edad, mujer in personas)
+    for tokens in args.hijo_inv:
+        edades = [t for t in tokens if isinstance(t, tuple)]
+        grados = [t for t in tokens if isinstance(t, str)]
+        if len(edades) != 1 or len(grados) > 1:
+            raise _grupo.ErrorGrupoFamiliar(
+                "--hijo-inv recibe una edad con sufijo opcional h o m y, opcionalmente, el grado total o parcial "
+                "(p.ej. --hijo-inv 20 total)"
+            )
+        (edad, mujer), = edades
+        benef.append(_grupo.Beneficiario(_grupo.TIPO_HIJO_INVALIDO, edad, mujer, parcial=grados == ["parcial"]))
+    return benef
+
+
 def _nan_a_none(v):
     return None if v is None or v != v else v
 
@@ -229,46 +288,23 @@ def _nota_edades(**edades) -> str:
 
 
 CODIGO_ERROR_TASA = 2
-
-
-def etiqueta_hijo_invalido(parcial: bool) -> str:
-    """Tipo de beneficiario y porcentaje aplicado para ``describir``."""
-    return "hijo inválido parcial 15%/11%" if parcial else "hijo inválido total 15%"
-
-
-def etiqueta_conyuge(conviviente: bool, con_hijos: bool = False, hijo_invalido: bool = False) -> str:
-    """Tipo de beneficiario (cónyuge o conviviente civil) y porcentaje aplicado para ``describir``."""
-    quien = "conviviente civil" if conviviente else "cónyuge"
-    if not con_hijos:
-        return f"{quien} sin hijos"
-    return f"{quien} con hijo inválido 50%" if hijo_invalido else f"{quien} con hijos 50%/60%"
-
-
-def etiqueta_madre_padre(madre: bool, h=None, hijo_invalido: bool = False) -> str:
-    """Madre o padre de hijos no matrimoniales y porcentaje aplicado para ``describir``."""
-    quien = "madre" if madre else "padre"
-    if hijo_invalido:
-        return f"{quien} no matrimonial con hijo inválido 30%"
-    if h is None or core.edad_entera(h) >= core.EDAD_LIMITE_HIJO:
-        return f"{quien} no matrimonial sin hijos 36%"
-    return f"{quien} no matrimonial con hijos 30%/36%"
-
-
-def etiqueta_padres(madre: bool, de: str = "del afiliado") -> str:
-    """Madre o padre del afiliado (o del causante) y porcentaje aplicado para ``describir``."""
-    return f"{'madre' if madre else 'padre'} {de} 50%"
+CODIGO_ERROR_GRUPO = 3
 
 
 def main(argv: list[str] | None = None) -> int:
     """Ejecuta la CLI. Sin tasa determinable (o con vector inexistente) escribe
-    el mensaje de la API en stderr y devuelve :data:`CODIGO_ERROR_TASA`. Las
-    advertencias de la API (p.ej. FAJ derogado) se escriben en stderr y no
-    cambian el codigo de salida."""
+    el mensaje de la API en stderr y devuelve :data:`CODIGO_ERROR_TASA`; un
+    grupo familiar que la norma no admite (articulo 58) devuelve
+    :data:`CODIGO_ERROR_GRUPO`. Las advertencias de la API (p.ej. FAJ
+    derogado) se escriben en stderr y no cambian el codigo de salida."""
     args = construir_parser().parse_args(argv)
     try:
         with warnings.catch_warnings(record=True) as avisos:
             warnings.simplefilter("always")
             codigo = _ejecutar(args)
+    except _grupo.ErrorGrupoFamiliar as e:
+        print(f"cnu {args.comando}: error: {e}", file=sys.stderr)
+        return CODIGO_ERROR_GRUPO
     except (ValueError, FileNotFoundError) as e:
         print(f"cnu {args.comando}: error: {e}", file=sys.stderr)
         print("Entregue la tasa con --rp (TITRP), --rv o --agno-vector, o un --fsiniestro anterior a 2014.",
@@ -405,6 +441,21 @@ def _ejecutar(args) -> int:
         v = core.cnu_sobrevivencia_padres(args.m, not args.padre, args.tabla_benef, rv=args.rv, rp=args.rp,
                                           pasos=args.pasos, **comunes)
         print(f"{v:9.6f}")
+    elif c == "grupo":
+        afiliado = None if args.afiliado is None else _grupo.Afiliado(args.afiliado[0], bool(args.afiliado[1]))
+        beneficiarios = _beneficiarios_cli(args)
+        r = _grupo.cnu_grupo_familiar(afiliado, beneficiarios, args.uf, args.tabla, args.tabla_benef,
+                                      rv=args.rv, rp=args.rp, **comunes)
+        edades = {} if afiliado is None else {"afiliado": afiliado.edad}
+        for i, b in enumerate(beneficiarios, 1):
+            edades[f"{b.tipo.replace('_', ' ')} {i}"] = b.edad
+        print(r.descripcion + _nota_edades(**edades))
+        if args.pasos:  # la descripcion va primero; el detalle periodo a periodo se imprime al recalcular
+            r = _grupo.cnu_grupo_familiar(afiliado, beneficiarios, args.uf, args.tabla, args.tabla_benef,
+                                          rv=args.rv, rp=args.rp, pasos=True, **comunes)
+        for comp in r.componentes:
+            print(f"  {comp.etiqueta:<44s}{comp.cnu:12.6f}")
+        print(f"  {'total':<44s}{r.total:12.6f}")
     elif c == "faj":
         rp = _nan_a_none(args.rp)
         quien = "afiliado soltero" if args.y is None else "afiliado con conyuge"

@@ -299,3 +299,71 @@ def test_padres(capsys):
         assert main(argv) == CODIGO_ERROR_TASA
         out, err = capsys.readouterr()
         assert out == "" and "TITRP" in err
+
+
+def test_grupo(capsys):
+    assert main(["grupo", "--afiliado", "65", "--hijo", "10", "--hijo", "14m", "--conyuge", "62m", "--hijo-inv", "20",
+                 "total", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == ("CNU RP para grupo familiar: afiliado, cónyuge con hijo inválido 50%, hijo no inválido 15%, "
+                         "hijo no inválido 15%, hijo inválido total 15% (tablas cb2020h b2020m mi2020h), tasa 3% en el año 2026")
+    r = cnu.cnu_grupo_familiar(cnu.Afiliado(65), [cnu.Beneficiario("conyuge", 62), cnu.Beneficiario("hijo", 10),
+                                                  cnu.Beneficiario("hijo", 14, True), cnu.Beneficiario("hijo_invalido", 20)],
+                               rp=0.03, agno_actual=2026)
+    assert len(lineas) == 7  # descripcion, cinco componentes y el total
+    assert lineas[1].split()[0] == "afiliado" and lineas[1].split()[-1] == "15.456439"
+    assert lineas[2].startswith("  cónyuge con hijo inválido 50%") and float(lineas[2].split()[-1]) == r.componentes[1].cnu
+    assert lineas[-1].split() == ["total", f"{r.total:.6f}"]
+    assert sum(float(l.split()[-1]) for l in lineas[1:-1]) == pytest.approx(r.total, abs=1e-6)
+    # Ejemplo del README: afiliado con conyuge e hijo, y el mismo grupo en sobrevivencia con cuota mortuoria.
+    assert main(["grupo", "--afiliado", "65", "--conyuge", "63", "--hijo", "10", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == ("CNU RP para grupo familiar: afiliado, cónyuge con hijos 50%/60%, hijo no inválido 15% "
+                         "(tablas cb2020h b2020m), tasa 3% en el año 2026")
+    assert lineas[-1].split() == ["total", "18.001136"]
+    assert main(["grupo", "--conyuge", "63m", "--hijo", "10m", "--uf", "1", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0].startswith("CNU RP para sobrevivencia de grupo familiar: cónyuge con hijos 50%/60%, hijo no inválido 15%,"
+                                " cuota mortuoria 15 UF (tabla b2020m)")
+    assert lineas[3].split() == ["cuota", "mortuoria", "15", "UF", "15.000000"]
+    assert lineas[-1].split() == ["total", "26.298419"]
+
+
+def test_grupo_edad_actuarial_pasos_y_sexos(capsys):
+    assert main(["grupo", "--afiliado", "65.6", "--conyuge", "62.5m", "--hijo", "10", "--pasos", "--rp", "0.03",
+                 "--agno-actual", "2026"]) == 0
+    out = capsys.readouterr().out
+    assert "[edad actuarial: afiliado 65.6 -> 66, conyuge 1 62.5 -> 63]" in out.splitlines()[0]
+    assert "--- afiliado ---" in out and "t =   1:" in out and out.count("--- ") == 3
+    assert out.strip().splitlines()[-1].split()[-1] == f"{cnu.cnu_grupo_familiar(66, [('conyuge', 63), ('hijo', 10)], rp=0.03, agno_actual=2026).total:.6f}"
+    assert main(["grupo", "--afiliado", "60m", "--conviviente", "65h", "--madre-padre", "48h", "--hijo-inv", "21m", "parcial",
+                 "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0].startswith("CNU RP para grupo familiar: afiliado, conviviente civil con hijo inválido 50%, "
+                                "padre no matrimonial con hijo inválido 30%, hijo inválido parcial 15%/11% "
+                                "(tablas rv2020m cb2020h mi2020m)")
+    assert main(["grupo", "--afiliado", "65", "--padres", "88", "--padres", "90h", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert "madre del afiliado 50%, padre del afiliado 50%" in lineas[0]
+    assert lineas[-1].split()[-1] == "15.704435"
+
+
+def test_grupo_errores(capsys):
+    from cnu.cli import CODIGO_ERROR_GRUPO
+
+    assert main(["grupo", "--afiliado", "65", "--padres", "88", "--conyuge", "62m", "--rp", "0.03", "--agno-actual", "2026"]) == CODIGO_ERROR_GRUPO
+    out, err = capsys.readouterr()
+    assert out == "" and "articulo 58" in err and "Traceback" not in err and "--rp" not in err
+    assert main(["grupo", "--afiliado", "65", "--hijo", "10", "--rp", "0.03", "--agno-actual", "2026"]) == CODIGO_ERROR_GRUPO
+    out, err = capsys.readouterr()
+    assert out == "" and "0,5/n" in err
+    assert main(["grupo", "--afiliado", "65", "--conyuge", "63", "--hijo-inv", "20", "total", "parcial", "--rp", "0.03",
+                 "--agno-actual", "2026"]) == CODIGO_ERROR_GRUPO
+    out, err = capsys.readouterr()
+    assert out == "" and "--hijo-inv" in err
+    assert main(["grupo", "--afiliado", "65", "--conyuge", "63", "--agno-actual", "2026"]) == CODIGO_ERROR_TASA
+    out, err = capsys.readouterr()
+    assert out == "" and "TITRP" in err and "--rp" in err
+    with pytest.raises(SystemExit) as e:
+        main(["grupo", "--afiliado", "65", "--hijo", "10x", "--rp", "0.03"])
+    assert e.value.code == 2 and "62m" in capsys.readouterr().err

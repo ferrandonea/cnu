@@ -23,6 +23,12 @@ Funciones principales
 * :func:`cnu_padres`, :func:`cnu_sobrevivencia_padres`: madre o padre del
   afiliado (50% cada uno, a falta de otros beneficiarios), sin comando Mata
   equivalente.
+* :func:`cnu_grupo_familiar`: CNU total de un grupo familiar (afiliado o
+  ``None`` en sobrevivencia mas una lista de :class:`Beneficiario`) con el
+  aporte de cada beneficiario (:class:`CNUGrupoFamiliar`), tramos del
+  articulo 58 decididos desde la lista, validacion de sus exclusiones
+  (:class:`ErrorGrupoFamiliar`) y cuota mortuoria opcional
+  (:data:`CUOTA_MORTUORIA_UF`).
 * :func:`cnu_afiliado_vec`, :func:`cnu_conyuge_vec`,
   :func:`cnu_sobrevivencia_conyuge_vec`, :func:`cnu_hijo_vec`,
   :func:`cnu_sobrevivencia_hijo_vec`, :func:`cnu_hijo_invalido_vec`,
@@ -88,6 +94,16 @@ from .faj import (  # noqa: E402
     faj_derogado,
     faj_funcion_objetivo,
 )
+from .grupo import (  # noqa: E402
+    CUOTA_MORTUORIA_UF,
+    TIPOS_BENEFICIARIO,
+    Afiliado,
+    Beneficiario,
+    CNUGrupoFamiliar,
+    ComponenteCNU,
+    ErrorGrupoFamiliar,
+    cnu_grupo_familiar,
+)
 from .proyeccion import ProyeccionPension, proyectar_cnu, proyectar_pension  # noqa: E402
 from .tablas import (  # noqa: E402
     TablaMortalidad,
@@ -130,16 +146,17 @@ def main() -> None:
 
 
 __all__ = [
-    "AGNO_VECTOR", "AJUSTE_MENSUAL", "DEROGACION_FAJ", "EDAD_LIMITE_HIJO", "EDAD_MAXIMA", "EDAD_MINIMA",
+    "AGNO_VECTOR", "AJUSTE_MENSUAL", "CUOTA_MORTUORIA_UF", "DEROGACION_FAJ", "EDAD_LIMITE_HIJO", "EDAD_MAXIMA", "EDAD_MINIMA",
     "EDAD_MINIMA_HIJO",
     "FRACCION_CONYUGE", "FRACCION_CONYUGE_CON_HIJOS", "FRACCION_HIJO", "FRACCION_HIJO_INVALIDO_PARCIAL",
     "FRACCION_MADRE_PADRE", "FRACCION_MADRE_PADRE_CON_HIJOS", "FRACCION_PADRES", "INICIO_TITRP",
     "ROL_AFILIADO", "ROL_BENEFICIARIO", "ROL_INVALIDO",
-    "TABLA_AFILIADO", "TABLA_BENEFICIARIO", "TABLA_VIGENTE",
-    "AdvertenciaCNU", "ProyeccionPension", "TablaMortalidad",
+    "TABLA_AFILIADO", "TABLA_BENEFICIARIO", "TABLA_VIGENTE", "TIPOS_BENEFICIARIO",
+    "AdvertenciaCNU", "Afiliado", "Beneficiario", "CNUGrupoFamiliar", "ComponenteCNU", "ErrorGrupoFamiliar",
+    "ProyeccionPension", "TablaMortalidad",
     "agno_tabla_por_siniestro", "agno_vector_efectivo", "calcular_faj", "cargar_tabla_mortalidad", "cargar_vector_tasas",
     "cnu_afiliado", "cnu_afiliado_vec", "cnu_conyuge", "cnu_conyuge_con_hijos", "cnu_conyuge_con_hijos_vec",
-    "cnu_conyuge_vec", "cnu_hijo", "cnu_hijo_invalido", "cnu_hijo_invalido_vec", "cnu_hijo_vec",
+    "cnu_conyuge_vec", "cnu_grupo_familiar", "cnu_hijo", "cnu_hijo_invalido", "cnu_hijo_invalido_vec", "cnu_hijo_vec",
     "cnu_madre_padre", "cnu_madre_padre_vec", "cnu_padres", "cnu_padres_vec",
     "cnu_sobrevivencia_conyuge", "cnu_sobrevivencia_conyuge_con_hijos", "cnu_sobrevivencia_conyuge_con_hijos_vec",
     "cnu_sobrevivencia_conyuge_vec", "cnu_sobrevivencia_hijo",

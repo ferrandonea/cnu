@@ -1369,7 +1369,7 @@ def cnu_sobrevivencia_padres(
 
 
 def describir(
-    tipo_cnu: str,
+    tipo_cnu,
     tabla: str | None = None,
     tabla_benef: str | None = None,
     agno_vector: int | None = AGNO_VECTOR,
@@ -1384,6 +1384,12 @@ def describir(
 ) -> str:
     """Etiqueta descriptiva del calculo, al estilo de los comandos de Stata.
 
+    ``tipo_cnu`` es el nombre del calculo (``"soltero sin hijos"``, ``"hijo
+    no inválido 15%"``) o el resultado de :func:`cnu.cnu_grupo_familiar`
+    (:class:`cnu.CNUGrupoFamiliar`): en ese caso se nombra cada beneficiario
+    con su porcentaje y se muestran las tablas resueltas por el grupo, e
+    ``tabla`` y ``tabla_benef`` no intervienen.
+
     ``tabla`` es la del afiliado (sexo ``mujer``) y ``tabla_benef`` la del
     beneficiario (sexo ``benef_mujer`` y rol ``rol_benef``, por defecto
     :data:`ROL_BENEFICIARIO`; :data:`ROL_INVALIDO` para el hijo invalido).
@@ -1395,10 +1401,13 @@ def describir(
     """
     agno_actual = _agno(agno_actual)
     tablas = []
-    for t, rol, es_mujer in ((tabla, ROL_AFILIADO, mujer), (tabla_benef, rol_benef, benef_mujer)):
-        if t:
-            tm = tabla_mortalidad(t, rol, es_mujer, fsiniestro, agno_actual, dir_tablas)
-            tablas.append(_etiqueta_tabla(tm))
+    if not isinstance(tipo_cnu, str):  # grupo familiar: etiqueta y tablas ya resueltas
+        tablas, tipo_cnu = list(tipo_cnu.tablas), tipo_cnu.etiqueta
+    else:
+        for t, rol, es_mujer in ((tabla, ROL_AFILIADO, mujer), (tabla_benef, rol_benef, benef_mujer)):
+            if t:
+                tm = tabla_mortalidad(t, rol, es_mujer, fsiniestro, agno_actual, dir_tablas)
+                tablas.append(_etiqueta_tabla(tm))
     etiqueta_tablas = ("tablas " if len(tablas) > 1 else "tabla ") + " ".join(tablas)
     if rv is not None:
         return f"CNU RV para {tipo_cnu} ({etiqueta_tablas}), tasa {rv * 100:g}% en el año {agno_actual}"

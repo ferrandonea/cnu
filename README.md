@@ -5,11 +5,14 @@ utilizados en el cálculo de pensiones del sistema chileno. Es la conversión a
 Python del módulo de Stata/Mata `cnu` de George G. Vega Yon (Superintendencia
 de Pensiones), cuyo código original se conserva en `ado/` y `man/`.
 
-Implementa las fórmulas de CNU para pensión de vejez de afiliado y de cónyuge
-sin hijos, para pensión de sobrevivencia de cónyuge sin hijos, la proyección
-de pensión en Retiro Programado y el Factor de Ajuste (FAJ, derogado desde
-2022 y conservado solo para cálculos históricos), con todas las tablas de
-mortalidad normativas desde 1985 hasta las TM2020 vigentes. La sección
+Implementa las fórmulas de CNU del Anexo N° 7 para pensión de vejez o
+invalidez y de sobrevivencia del afiliado y de cada beneficiario (cónyuge o
+conviviente civil con y sin hijos, hijos no inválidos e inválidos, madre o
+padre de hijos no matrimoniales y padres del afiliado), el CNU total de un
+grupo familiar con el aporte de cada beneficiario y la cuota mortuoria, la
+proyección de pensión en Retiro Programado y el Factor de Ajuste (FAJ,
+derogado desde 2022 y conservado solo para cálculos históricos), con todas
+las tablas de mortalidad normativas desde 1985 hasta las TM2020 vigentes. La sección
 [Estado normativo](#estado-normativo) resume qué está alineado con el
 Compendio de Normas de la Superintendencia de Pensiones (SP) y qué debe
 entregar el usuario.
@@ -78,6 +81,33 @@ cnu.cnu_sobrevivencia_madre_padre(45, 21, hijo_invalido=True, rp=0.03, agno_actu
 cnu.cnu_padres(65, 88, rp=0.03, agno_actual=2026)                       # 0.161421  (cb2020h, b2020m)
 cnu.cnu_padres(65, 88, madre=False, rp=0.03, agno_actual=2026)          # 0.115149  (cb2020h, cb2020h)
 cnu.cnu_sobrevivencia_padres(88, rp=0.03, agno_actual=2026)             # 3.089039  (b2020m)
+
+# Grupo familiar completo: el afiliado (o None en sobrevivencia) más la lista de beneficiarios.
+# La función decide los tramos (50%/60% del cónyuge, 30%/36% de la madre o el padre no matrimonial)
+# a partir de los hijos con derecho de la lista y devuelve el total con el aporte de cada uno
+g = cnu.cnu_grupo_familiar(cnu.Afiliado(65), [cnu.Beneficiario("conyuge", 63), cnu.Beneficiario("hijo", 10)],
+                           rp=0.03, agno_actual=2026)
+g.total                                     # 18.001136  (= 15.456439 + 2.409035 + 0.135662)
+[c.cnu for c in g.componentes]              # [15.456439, 2.409035, 0.135662]
+[c.etiqueta for c in g.componentes]         # ['afiliado', 'cónyuge con hijos 50%/60%', 'hijo no inválido 15%']
+g.componentes[1].porcentajes                # (0.5, 0.6)
+g.descripcion   # 'CNU RP para grupo familiar: afiliado, cónyuge con hijos 50%/60%, hijo no inválido 15% (tablas cb2020h b2020m), tasa 3% en el año 2026'
+g.to_dict()     # {'total': ..., 'descripcion': ..., 'componentes': [{'tipo': 'afiliado', 'etiqueta': ..., 'porcentajes': [1.0], 'cnu': 15.456439, ...}, ...]}
+
+# Los beneficiarios también se aceptan como tuplas (tipo, edad[, mujer[, parcial]]); un hijo inválido deja
+# al cónyuge en 50% vitalicio; sin afiliado se usan las variantes de sobrevivencia
+cnu.cnu_grupo_familiar(cnu.Afiliado(65), [("conyuge", 63), ("hijo", 10), ("hijo_invalido", 20)],
+                       rp=0.03, agno_actual=2026).componentes[1].etiqueta   # 'cónyuge con hijo inválido 50%'
+cnu.cnu_grupo_familiar(None, [("conyuge", 63), ("hijo", 10, True)], rp=0.03, agno_actual=2026).total   # 11.298419
+
+# Cuota mortuoria (cnu.CUOTA_MORTUORIA_UF = 15 UF) como componente separado, en las unidades del saldo:
+# valor_uf es el valor de la UF en esas unidades (aquí el saldo está en UF)
+cnu.cnu_grupo_familiar(cnu.Afiliado(65), [("conyuge", 63), ("hijo", 10)], valor_uf=1,
+                       rp=0.03, agno_actual=2026).total                    # 33.001136  (18.001136 + 15)
+
+# Las exclusiones del artículo 58 lanzan ErrorGrupoFamiliar (un ValueError que cita la regla)
+cnu.cnu_grupo_familiar(cnu.Afiliado(65), [("padres", 88), ("conyuge", 63)], rp=0.03, agno_actual=2026)
+# ErrorGrupoFamiliar: Los padres del afiliado solo tienen derecho a falta de conyuge, ... (articulo 58 del D.L. N 3.500)
 
 # Factor de ajuste (derogado desde el 1-2-2022: con fecha posterior emite AdvertenciaCNU)
 cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2026)      # 0.037205
@@ -185,6 +215,8 @@ vector de tasas inexistente quedan en `nan` y se emite una advertencia
 | `m` (padres) | Edad del padre o la madre del afiliado; 50% vitalicio cada uno, una llamada (o una fila) por cada padre. |
 | `madre` | En las funciones de madre o padre y de padres: `True` (por defecto) si el beneficiario es la madre, `False` si es el padre; fija el sexo de la tabla de beneficiario. |
 | `conviviente` | `True` si el beneficiario de las funciones del cónyuge es conviviente civil (Ley N° 20.830): misma fórmula y mismo valor; documenta el rol. |
+| `afiliado`, `beneficiarios` (grupo familiar) | `cnu.Afiliado(edad, mujer)` (o una tupla, o `None` en sobrevivencia) y lista de `cnu.Beneficiario(tipo, edad, mujer=None, parcial=False)` con `tipo` en `cnu.TIPOS_BENEFICIARIO` (`conyuge`, `conviviente`, `hijo`, `hijo_invalido`, `madre_padre`, `padres`); `mujer=None` usa el sexo por defecto del tipo (cónyuge mujer, hijo hombre, madre). |
+| `valor_uf` (grupo familiar) | Valor de la UF en las unidades del saldo; si se entrega, la cuota mortuoria (15 UF) se agrega como componente separado. |
 | `agno_vector` | Año del vector de tasas para Retiro Programado. Sin él, solo un `fsiniestro` anterior a 2014 usa por defecto el vector de su año. |
 | `agno_actual` | Año de cálculo; ajusta las tablas por mejoramiento y, sin `fsiniestro`, fija la tabla vigente al 31 de diciembre de ese año (por defecto, el año actual). |
 | `rv` | Tasa de renta vitalicia. Si se entrega, el CNU es de RV. |
@@ -224,6 +256,9 @@ cnu madre-padre 50 45 --padre --rp 0.03               # padre de hijos no matrim
 cnu sobrev-madre-padre 45 21 --hijo-invalido --rp 0.03   # sobrevivencia de madre no matrimonial con hijo inválido 30%
 cnu padres 65 88 --rp 0.03 --agno-actual 2026         # madre del afiliado 50% (--padre: el padre, tabla de hombre)
 cnu sobrev-padres 88 --rp 0.03                        # sobrevivencia de madre del causante 50%
+cnu grupo --afiliado 65 --conyuge 63 --hijo 10 --rp 0.03 --agno-actual 2026   # grupo familiar: aporte de cada uno y total
+cnu grupo --afiliado 65 --hijo 10 --hijo 14m --conyuge 62m --hijo-inv 20 total --rp 0.03   # opciones repetibles; sufijo h/m = sexo
+cnu grupo --conyuge 63m --hijo 10m --uf 39000 --rp 0.03   # sin --afiliado, sobrevivencia; --uf agrega la cuota mortuoria
 cnu faj 65 62 --rp 0.03 --agno-vector 2013
 cnu proy 65 --faj --csv --rp 0.03 > trayectoria.csv
 cnu tablas
@@ -248,7 +283,19 @@ CNU RP para madre no matrimonial con hijos 30%/36% (tablas cb2020h b2020m), tasa
 $ cnu padres 65 88 --rp 0.03 --agno-actual 2026
 CNU RP para madre del afiliado 50% (tablas cb2020h b2020m), tasa 3% en el año 2026
  0.161421
+$ cnu grupo --afiliado 65 --conyuge 63 --hijo 10 --rp 0.03 --agno-actual 2026
+CNU RP para grupo familiar: afiliado, cónyuge con hijos 50%/60%, hijo no inválido 15% (tablas cb2020h b2020m), tasa 3% en el año 2026
+  afiliado                                       15.456439
+  cónyuge con hijos 50%/60%                       2.409035
+  hijo no inválido 15%                            0.135662
+  total                                          18.001136
 ```
+
+En `cnu grupo` cada beneficiario se entrega como `EDAD[h|m]` (el sufijo fija
+el sexo; sin él rige el del tipo: cónyuge y conviviente mujer, hijos hombre,
+`--madre-padre` y `--padres` madre) y `--hijo-inv` admite además el grado
+`total` (por defecto) o `parcial`. Un grupo que la norma no admite (artículo
+58) termina con el mensaje en stderr y código de salida 3.
 
 ## Estado normativo
 
@@ -304,7 +351,9 @@ históricos: con fecha de cálculo igual o posterior a `cnu.DEROGACION_FAJ`
 |---|---|
 | Afiliado (`cnu_afiliado`) | Hijos sin cónyuge ni madre o padre con derecho a pensión (letras 1.f, 1.g, 2.g y 2.h, porcentaje con 0,5/n) |
 | Cónyuge sin hijos, pensión de vejez (`cnu_conyuge`, letra 2.b del Anexo N° 7) | Conviviente civil sin hijos comunes que concurre con hijos del causante (letras 1.m, 1.o, 2.n y 2.p, 15% mientras haya hijos con derecho) |
-| Sobrevivencia de cónyuge sin hijos (`cnu_sobrevivencia_conyuge`, letra 1.a) | Cuota mortuoria |
+| Sobrevivencia de cónyuge sin hijos (`cnu_sobrevivencia_conyuge`, letra 1.a) | |
+| Grupo familiar completo: CNU total como suma del afiliado y de cada beneficiario de la lista, con los tramos del artículo 58 decididos desde los hijos con derecho (`cnu_grupo_familiar`, `cnu grupo`) | |
+| Cuota mortuoria de 15 UF (`CUOTA_MORTUORIA_UF`), componente opcional del grupo familiar en las unidades del saldo (`valor_uf`) | |
 | Cónyuge con hijos con derecho a pensión: 50% hasta los 24 años del hijo menor y 60% después, o 50% vitalicio con algún hijo inválido, pensión de vejez o invalidez (`cnu_conyuge_con_hijos`, letras 2.c y 2.d) | |
 | Sobrevivencia de cónyuge con hijos (`cnu_sobrevivencia_conyuge_con_hijos`, letras 1.b y 1.c) | |
 | Conviviente civil sin hijos o con hijos comunes (`conviviente=True` en las funciones del cónyuge; letras 1.l, 1.n, 1.p, 2.m, 2.o y 2.q, misma fórmula con `a` en lugar de `y`) | |
@@ -326,10 +375,25 @@ hijos no matrimoniales siguen la misma mecánica con 30%/36% y admiten
 `h=None` (sin hijos con derecho, 36%). Las de los padres del afiliado calculan
 a uno de los dos por llamada (50% cada uno); su derecho existe solo a falta de
 cónyuge, conviviente civil, hijos y madre o padre no matrimonial, y siempre
-que sean carga familiar del afiliado. La elegibilidad (por ejemplo, la
-calidad de estudiante entre los 18 y los 24 años, la invalidez declarada y su
-grado, la existencia de la unión civil o la calidad de carga de los padres)
-es un dato de entrada que el paquete no valida.
+que sean carga familiar del afiliado.
+
+`cnu_grupo_familiar` compone todo lo anterior: recibe al afiliado (o `None`
+en sobrevivencia) y la lista de beneficiarios, obtiene de ella el hijo menor
+con derecho (menor de 24 años) y la presencia de algún hijo inválido para
+fijar los tramos 50%/60% del cónyuge o conviviente y 30%/36% de la madre o el
+padre no matrimonial (todos los hijos de la lista cuentan para ambos), y
+devuelve el total como suma exacta de las funciones individuales. Solo valida
+las exclusiones del artículo 58 del D.L. N° 3.500: padres del afiliado junto
+con cónyuge, conviviente, hijos o madre o padre no matrimonial, más de un
+cónyuge o conviviente, o más de una madre y un padre del afiliado lanzan
+`ErrorGrupoFamiliar` (un `ValueError` que cita el artículo), igual que un
+grupo con hijos con derecho pero sin cónyuge, conviviente ni madre o padre no
+matrimonial, cuyo porcentaje 0,15 + 0,5/n sigue pendiente. La elegibilidad
+de cada beneficiario (por ejemplo, la calidad de estudiante entre los 18 y
+los 24 años, la invalidez declarada y su grado, la existencia de la unión
+civil, la filiación de los hijos o la calidad de carga de los padres) es un
+dato de entrada que el paquete no valida: quien llama decide quién integra
+el grupo y el paquete calcula su capital necesario.
 
 ### Ley N° 21.735
 
