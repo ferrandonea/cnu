@@ -35,6 +35,27 @@ def test_proy_csv(capsys):
     assert len(lineas) == 47
 
 
+def test_proy_banda(capsys):
+    assert main(["proy", "65", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.strip().splitlines()
+    assert "con banda 10%" in lineas[0] and lineas[1].split() == ["edad", "saldo", "pension", "acotado"]
+    assert lineas[2].split()[-1] == "0.000000" and any(l.split()[-1] == "1.000000" for l in lineas[2:])
+    assert main(["proy", "65", "--sin-banda", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.strip().splitlines()
+    assert "banda" not in lineas[0] and lineas[1].split() == ["edad", "saldo", "pension"]
+    assert main(["proy", "65", "--banda", "--csv", "--rp", "0.03", "--agno-actual", "2014"]) == 0
+    lineas = capsys.readouterr().out.strip().splitlines()
+    assert lineas[0] == "edad,saldo,pension,acotado" and lineas[-1].endswith(",0") and any(l.endswith(",1") for l in lineas)
+    assert main(["proy", "65", "--csv", "--rp", "0.03", "--agno-actual", "2014"]) == 0
+    assert capsys.readouterr().out.splitlines()[0] == "edad,saldo,pension"
+    # Con FAJ forzado se mantiene la advertencia de derogacion.
+    assert main(["proy", "65", "--faj", "--banda", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    out, err = capsys.readouterr()
+    assert "con FAJ y banda 10%" in out.splitlines()[0] and "21.419" in err
+    with pytest.raises(SystemExit):
+        main(["proy", "65", "--banda", "--sin-banda", "--rp", "0.03"])
+
+
 def test_tablas(capsys):
     main(["tablas"])
     out = capsys.readouterr().out

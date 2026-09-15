@@ -42,7 +42,10 @@ Funciones principales
   invalidez :data:`GRADO_NO_INVALIDO`, :data:`GRADO_INVALIDO_TOTAL` o
   :data:`GRADO_INVALIDO_PARCIAL`), total por fila y matriz opcional de
   componentes.
-* :func:`proyectar_cnu`, :func:`proyectar_pension`: proyecciones (``cnu_proy_pensi``).
+* :func:`proyectar_cnu`, :func:`proyectar_pension`: proyecciones (``cnu_proy_pensi``);
+  la trayectoria de pension aplica la banda de variacion maxima del 10% de la
+  Ley N 21.735 desde :data:`VIGENCIA_BANDA` (parametro ``banda`` y
+  :func:`banda_vigente`).
 * :func:`faj_afiliado`, :func:`faj_afiliado_vec`, :func:`calcular_faj`:
   Factor de Ajuste (``cnu_faji``, ``cnu_faj``), derogado desde el 1 de
   febrero de 2022 (:data:`DEROGACION_FAJ`; solo para calculos historicos).
@@ -109,7 +112,14 @@ from .grupo import (  # noqa: E402
     ErrorGrupoFamiliar,
     cnu_grupo_familiar,
 )
-from .proyeccion import ProyeccionPension, proyectar_cnu, proyectar_pension  # noqa: E402
+from .proyeccion import (  # noqa: E402
+    BANDA_VARIACION,
+    VIGENCIA_BANDA,
+    ProyeccionPension,
+    banda_vigente,
+    proyectar_cnu,
+    proyectar_pension,
+)
 from .tablas import (  # noqa: E402
     TablaMortalidad,
     agno_tabla_por_siniestro,
@@ -156,16 +166,16 @@ def main() -> None:
 
 
 __all__ = [
-    "AGNO_VECTOR", "AJUSTE_MENSUAL", "CUOTA_MORTUORIA_UF", "DEROGACION_FAJ", "EDAD_LIMITE_HIJO", "EDAD_MAXIMA", "EDAD_MINIMA",
+    "AGNO_VECTOR", "AJUSTE_MENSUAL", "BANDA_VARIACION", "CUOTA_MORTUORIA_UF", "DEROGACION_FAJ", "EDAD_LIMITE_HIJO", "EDAD_MAXIMA", "EDAD_MINIMA",
     "EDAD_MINIMA_HIJO",
     "FRACCION_CONYUGE", "FRACCION_CONYUGE_CON_HIJOS", "FRACCION_HIJO", "FRACCION_HIJO_INVALIDO_PARCIAL",
     "FRACCION_MADRE_PADRE", "FRACCION_MADRE_PADRE_CON_HIJOS", "FRACCION_PADRES",
     "GRADO_INVALIDO_PARCIAL", "GRADO_INVALIDO_TOTAL", "GRADO_NO_INVALIDO", "GRADOS_INVALIDEZ", "INICIO_TITRP",
     "ROL_AFILIADO", "ROL_BENEFICIARIO", "ROL_INVALIDO",
-    "TABLA_AFILIADO", "TABLA_BENEFICIARIO", "TABLA_VIGENTE", "TIPOS_BENEFICIARIO",
+    "TABLA_AFILIADO", "TABLA_BENEFICIARIO", "TABLA_VIGENTE", "TIPOS_BENEFICIARIO", "VIGENCIA_BANDA",
     "AdvertenciaCNU", "Afiliado", "Beneficiario", "CNUGrupoFamiliar", "ComponenteCNU", "ErrorGrupoFamiliar",
     "ProyeccionPension", "TablaMortalidad",
-    "agno_tabla_por_siniestro", "agno_vector_efectivo", "calcular_faj", "cargar_tabla_mortalidad", "cargar_vector_tasas",
+    "agno_tabla_por_siniestro", "agno_vector_efectivo", "banda_vigente", "calcular_faj", "cargar_tabla_mortalidad", "cargar_vector_tasas",
     "cnu_afiliado", "cnu_afiliado_vec", "cnu_conyuge", "cnu_conyuge_con_hijos", "cnu_conyuge_con_hijos_vec",
     "cnu_conyuge_vec", "cnu_grupo_familiar", "cnu_grupo_familiar_vec", "cnu_hijo", "cnu_hijo_invalido", "cnu_hijo_invalido_vec", "cnu_hijo_vec",
     "cnu_madre_padre", "cnu_madre_padre_vec", "cnu_padres", "cnu_padres_vec",

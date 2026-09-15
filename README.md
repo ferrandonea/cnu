@@ -113,9 +113,14 @@ cnu.cnu_grupo_familiar(cnu.Afiliado(65), [("padres", 88), ("conyuge", 63)], rp=0
 cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2026)      # 0.037205
 cnu.faj_afiliado(65, 62, rp=0.03, agno_vector=2013, agno_actual=2026)  # 0.004659
 
-# Proyección de pensión en retiro programado (con o sin FAJ; con faj=True, misma advertencia)
+# Proyección de pensión en retiro programado (con o sin FAJ; con faj=True, misma advertencia).
+# Con fecha de cálculo desde el 1-9-2025 (cnu.VIGENCIA_BANDA) aplica la banda del 10% de la Ley N° 21.735
 p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, agno_actual=2026)
-p.edad, p.saldo, p.pension                       # p.pension[0] = 64.6979
+p.edad, p.saldo, p.pension                       # p.pension[0] = 64.6979 (la primera pensión no cambia)
+p.descripcion           # "Trayectoria de pension con banda 10% para afiliado soltero (tabla cb2020) tasa 3% en 2026."
+p.edad[p.acotado]       # [90, ..., 97]: períodos donde la banda acotó la pensión; p.pension[25] = 23.8114 (edad 90)
+q = cnu.proyectar_pension(65, saldo=1000, rp=0.03, agno_actual=2026, banda=False)   # sin banda: q.pension[25] = 23.7923
+cnu.proyectar_pension(65, saldo=1000, rp=0.03, agno_actual=2024)   # antes de la vigencia no hay banda (banda=None)
 p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, faj=True, agno_actual=2026)
 p.edad, p.saldo, p.pension, p.faj, p.saldo_faj   # p.pension[0] = 63.2245, p.faj = 0.022775
 p.to_dataframe()        # requiere pandas
@@ -279,7 +284,9 @@ cnu grupo --afiliado 65 --conyuge 63 --hijo 10 --rp 0.03 --agno-actual 2026   # 
 cnu grupo --afiliado 65 --hijo 10 --hijo 14m --conyuge 62m --hijo-inv 20 total --rp 0.03   # opciones repetibles; sufijo h/m = sexo
 cnu grupo --conyuge 63m --hijo 10m --uf 39000 --rp 0.03   # sin --afiliado, sobrevivencia; --uf agrega la cuota mortuoria
 cnu faj 65 62 --rp 0.03 --agno-vector 2013
-cnu proy 65 --faj --csv --rp 0.03 > trayectoria.csv
+cnu proy 65 --csv --rp 0.03 > trayectoria.csv      # con banda 10% (fecha de cálculo desde el 1-9-2025); columna acotado
+cnu proy 65 --sin-banda --rp 0.03                     # sin banda; --banda la fuerza en fechas anteriores
+cnu proy 65 --faj --csv --rp 0.03 --agno-actual 2014 > trayectoria.csv   # FAJ histórico
 cnu tablas
 ```
 
@@ -418,12 +425,32 @@ el grupo y el paquete calcula su capital necesario.
 ### Ley N° 21.735
 
 La Ley N° 21.735 (marzo de 2025) introdujo una banda de variación máxima del
-10% para los recálculos trimestrales de las pensiones en retiro programado
-(desde el 1 de septiembre de 2025) y la Compensación por Diferencias de
-Expectativa de Vida (CEV), regulada en la Letra C del Título XIX del Libro
-III. Ninguna de las dos modifica la fórmula del CNU: la banda actúa sobre la
-pensión resultante y la CEV es un beneficio adicional. No están
-implementadas en este paquete.
+10% para los recálculos de las pensiones en retiro programado y renta
+temporal derivados de los ajustes de la TITRP (desde el 1 de septiembre de
+2025) y la Compensación por Diferencias de Expectativa de Vida (CEV),
+regulada en la Letra C del Título XIX del Libro III. Ninguna de las dos
+modifica la fórmula del CNU: la banda actúa sobre la pensión resultante y la
+CEV es un beneficio adicional.
+
+**Banda del 10%.** `proyectar_pension` (y `cnu proy`) la aplica cuando la
+fecha de cálculo (`fsiniestro` o el 31 de diciembre de `agno_actual`) es
+igual o posterior a `cnu.VIGENCIA_BANDA` (20250901); `banda=True` /
+`--banda` la fuerza y `banda=False` / `--sin-banda` la desactiva. La
+pensión de cada período `j ≥ 1` queda entre el 90% y el 110% de la pensión
+del período anterior (la primera pensión no cambia), el saldo se descuenta
+con la pensión efectivamente pagada, `p.acotado` (columna `acotado` en la
+CLI) marca los períodos donde la banda actuó y la descripción dice "con
+banda 10%". La pensión nunca supera el saldo disponible: si la banda exige
+más de lo que queda, se paga el saldo y la cuenta se agota. Simplificaciones
+documentadas: la norma regula los ajustes trimestrales de la TITRP y esta
+proyección es anual, por lo que la banda se aplica entre períodos anuales
+consecutivos (base de comparación: la pensión del período anterior), y los
+recálculos extraordinarios, que la ley excluye de la banda, no forman parte
+de la proyección. Fuente: Ley N° 21.735 y oficio de la Superintendencia de
+Pensiones del 17 de abril de 2025 con instrucciones a las AFP (ver
+[Referencias](#referencias)).
+
+**CEV.** No está implementada en este paquete.
 
 ## Tablas de mortalidad
 

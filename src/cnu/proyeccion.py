@@ -12,7 +12,35 @@ import numpy as np
 
 from . import core
 from .core import AGNO_VECTOR, EDAD_MAXIMA, EDAD_MINIMA, TABLA_AFILIADO, TABLA_BENEFICIARIO
-from .faj import _advertir_faj_derogado, calcular_faj, faj_derogado
+from .faj import _advertir_faj_derogado, calcular_faj, faj_derogado, fecha_calculo_faj
+
+# Ley N 21.735: desde esta fecha (YYYYMMDD) la pension de retiro programado no
+# puede variar mas de :data:`BANDA_VARIACION` respecto de la anterior en los
+# recalculos derivados de los ajustes de la TITRP (oficio de la SP del 17 de
+# abril de 2025). Ver :func:`proyectar_pension`.
+VIGENCIA_BANDA = 20250901
+BANDA_VARIACION = 0.10
+
+
+def banda_vigente(fsiniestro: int = 0, agno_actual: int | None = None) -> bool:
+    """``True`` si a la fecha de calculo rige la banda del 10% (ver :data:`VIGENCIA_BANDA`).
+
+    La fecha de calculo es la misma del FAJ y de las tablas: ``fsiniestro`` o,
+    en su defecto, el 31 de diciembre de ``agno_actual``.
+    """
+    return fecha_calculo_faj(fsiniestro, agno_actual) >= VIGENCIA_BANDA
+
+
+def _acotar(libre: float, anterior: float, disponible: float) -> tuple[float, bool]:
+    """Pension del periodo con la banda: ``[0,9; 1,1] x anterior`` y nunca mas que el saldo disponible.
+
+    Devuelve la pension acotada y si la banda actuo (la pension libre estaba
+    fuera de la banda).
+    """
+    inf, sup = (1 - BANDA_VARIACION) * anterior, (1 + BANDA_VARIACION) * anterior
+    acotada = min(max(libre, inf), sup)
+    pagada = min(acotada, disponible)
+    return pagada, pagada != libre
 
 
 def _por_fila(valor, n: int) -> list:
@@ -108,7 +136,8 @@ class ProyeccionPension:
     """Trayectoria de pension en Retiro Programado.
 
     ``faj`` y ``saldo_faj`` solo se llenan cuando la proyeccion incluye Factor
-    de Ajuste.
+    de Ajuste; ``acotado`` (un booleano por periodo: ``True`` donde la banda del
+    10% cambio la pension) solo cuando se aplico la banda.
     """
 
     edad: np.ndarray
@@ -117,21 +146,25 @@ class ProyeccionPension:
     faj: float | None = None
     saldo_faj: np.ndarray | None = None
     descripcion: str = ""
+    acotado: np.ndarray | None = None
 
     @property
     def con_faj(self) -> bool:
         return self.faj is not None
 
+    @property
+    def con_banda(self) -> bool:
+        return self.acotado is not None
+
     def columnas(self) -> dict[str, np.ndarray]:
+        cols = {"edad": self.edad, "saldo": self.saldo}
         if self.con_faj:
-            return {
-                "edad": self.edad,
-                "saldo": self.saldo,
-                "faj": np.full(len(self.edad), self.faj),
-                "saldo_faj": self.saldo_faj,
-                "pension": self.pension,
-            }
-        return {"edad": self.edad, "saldo": self.saldo, "pension": self.pension}
+            cols["faj"] = np.full(len(self.edad), self.faj)
+            cols["saldo_faj"] = self.saldo_faj
+        cols["pension"] = self.pension
+        if self.con_banda:
+            cols["acotado"] = self.acotado.astype(int)
+        return cols
 
     def como_matriz(self) -> np.ndarray:
         """Matriz con las mismas columnas que ``r(pens)`` en Stata."""
@@ -157,6 +190,7 @@ def proyectar_pension(
     rp: float | None = None,
     fsiniestro: int = 0,
     faj: bool = False,
+    banda: bool | None = None,
     edad_maxima: int = 98,
     pcent: float = 0.3,
     rp0: float | None = None,
@@ -183,6 +217,21 @@ def proyectar_pension(
         :data:`cnu.faj.DEROGACION_FAJ` se emite una :class:`cnu.AdvertenciaCNU`
         y la proyeccion se calcula igual, solo para reproducir calculos
         historicos.
+    :param banda: banda de variacion maxima del 10% de la Ley N 21.735
+        (oficio de la SP del 17 de abril de 2025). ``None`` (por defecto): se
+        aplica si la fecha de calculo (``fsiniestro`` o el 31 de diciembre de
+        ``agno_actual``) es igual o posterior a :data:`VIGENCIA_BANDA`
+        (20250901); ``True`` y ``False`` la fuerzan o la desactivan. Con la
+        banda, la pension de cada periodo ``j >= 1`` queda en
+        ``[0,9; 1,1] x pension(j - 1)`` (la primera pension no cambia), el
+        saldo se descuenta con la pension efectivamente pagada y
+        ``ProyeccionPension.acotado`` marca los periodos donde la banda actuo.
+        La pension nunca supera el saldo disponible (si la banda exige mas de
+        lo que queda, se paga el saldo y la cuenta se agota). Simplificacion:
+        la norma regula los ajustes trimestrales de la TITRP y esta proyeccion
+        es anual, por lo que la banda se aplica entre periodos anuales
+        consecutivos; los recalculos extraordinarios, excluidos de la banda
+        por la ley, no forman parte de la proyeccion.
     :param edad_maxima, pcent, rp0, criter, maxiter: parametros del FAJ.
     """
     x = core.edad_entera(x)
@@ -203,19 +252,25 @@ def proyectar_pension(
     quien = "afiliado soltero" if y is None else "afiliado con conyuge"
     tablas = tabla if y is None else f"{tabla} {tabla_benef}"
     tasa = f"vector {core.agno_vector_efectivo(agno_vector, fsiniestro)}" if rp is None else f"tasa {rp * 100:g}%"
-    sufijo = " con FAJ" if faj else ""
+    if banda is None:
+        banda = banda_vigente(fsiniestro, agno_actual)
+    extras = [s for s, con in (("FAJ", faj), ("banda 10%", banda)) if con]
+    sufijo = " con " + " y ".join(extras) if extras else ""
     descripcion = f"Trayectoria de pension{sufijo} para {quien} (tabla {tablas}) {tasa} en {agno_actual}."
 
     pens = np.full(n, np.nan)
     saldos = np.full(n, np.nan)
+    acotado = np.zeros(n, dtype=bool) if banda else None
 
     if not faj:
         pens[0] = saldo / cnu[0]
         saldos[0] = (saldo - pens[0]) * (1 + tasas[0])
         for i in range(1, n):
             pens[i] = saldos[i - 1] / cnu[i]
+            if banda:
+                pens[i], acotado[i] = _acotar(pens[i], pens[i - 1], saldos[i - 1])
             saldos[i] = max(0.0, (saldos[i - 1] - pens[i]) * (1 + tasas[i]))
-        return ProyeccionPension(edades, saldos, pens, descripcion=descripcion)
+        return ProyeccionPension(edades, saldos, pens, descripcion=descripcion, acotado=acotado)
 
     if faj_derogado(fsiniestro, agno_actual):
         _advertir_faj_derogado()
@@ -229,26 +284,31 @@ def proyectar_pension(
     saldos[0] = (saldo - pens[0] - pens[0] / (1 - f) * f) * (1 + tasas[0])
     saldofaj[0] = pens[0] / (1 - f) * f * (1 + tasas[0])
     for i in range(1, n):
+        libre = saldos[i - 1] / cnu[i]
         if not fajactivo:
-            pens[i] = saldos[i - 1] / cnu[i] * (1 - f)
+            pens[i] = libre * (1 - f)
             # Mientras la pension supere la pension FAJ, se sigue acumulando reserva.
             if pens[i] > pensfaj:
-                saldofaj[i] = (saldofaj[i - 1] + saldos[i - 1] / cnu[i] * f) * (1 + tasas[i])
-                saldos[i] = (saldos[i - 1] - saldos[i - 1] / cnu[i]) * (1 + tasas[i])
-                continue
-            fajactivo = True
+                saldofaj[i] = (saldofaj[i - 1] + libre * f) * (1 + tasas[i])
+                saldos[i] = (saldos[i - 1] - libre) * (1 + tasas[i])
+            else:
+                fajactivo = True
+        if fajactivo:
+            # Pension y saldos segun FAJ
+            if saldofaj[i - 1] - (pensfaj - libre) < 0:
+                pens[i] = libre
+                saldos[i] = (saldos[i - 1] - libre) * (1 + tasas[i])
+            else:
+                pens[i] = pensfaj
+                saldos[i] = (saldos[i - 1] - libre) * (1 + tasas[i])
+                saldofaj[i] = (saldofaj[i - 1] - (pensfaj - libre)) * (1 + tasas[i])
+        if banda:
+            # La banda actua sobre la pension pagada; la diferencia queda en (o sale de) la cuenta.
+            pagada, acotado[i] = _acotar(pens[i], pens[i - 1], saldos[i - 1] + saldofaj[i - 1])
+            saldos[i] = max(0.0, saldos[i] + (pens[i] - pagada) * (1 + tasas[i]))
+            pens[i] = pagada
 
-        # Pension y saldos segun FAJ
-        if saldofaj[i - 1] - (pensfaj - saldos[i - 1] / cnu[i]) < 0:
-            pens[i] = saldos[i - 1] / cnu[i]
-            saldos[i] = (saldos[i - 1] - saldos[i - 1] / cnu[i]) * (1 + tasas[i])
-            continue
-
-        pens[i] = pensfaj
-        saldos[i] = (saldos[i - 1] - saldos[i - 1] / cnu[i]) * (1 + tasas[i])
-        saldofaj[i] = (saldofaj[i - 1] - (pensfaj - saldos[i - 1] / cnu[i])) * (1 + tasas[i])
-
-    return ProyeccionPension(edades, saldos, pens, f, saldofaj, descripcion)
+    return ProyeccionPension(edades, saldos, pens, f, saldofaj, descripcion, acotado)
 
 
-__all__ = ["ProyeccionPension", "proyectar_cnu", "proyectar_pension"]
+__all__ = ["BANDA_VARIACION", "ProyeccionPension", "VIGENCIA_BANDA", "banda_vigente", "proyectar_cnu", "proyectar_pension"]

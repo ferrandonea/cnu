@@ -54,6 +54,13 @@ def test_ejemplos_actuales_tm2020():
     assert cnu.faj_afiliado(65, 62, rp=0.03, agno_vector=2013, agno_actual=2026) == pytest.approx(0.004659, abs=1e-6)
     p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, agno_actual=2026)
     assert p.pension[0] == pytest.approx(64.6979, abs=1e-4)
+    assert p.descripcion == "Trayectoria de pension con banda 10% para afiliado soltero (tabla cb2020) tasa 3% en 2026."
+    assert list(p.edad[p.acotado]) == [90, 91, 92, 93, 94, 95, 96, 97]
+    assert p.pension[25] == pytest.approx(23.8114, abs=1e-4)
+    q = cnu.proyectar_pension(65, saldo=1000, rp=0.03, agno_actual=2026, banda=False)
+    assert q.acotado is None and q.pension[25] == pytest.approx(23.7923, abs=1e-4)
+    assert cnu.VIGENCIA_BANDA == 20250901
+    assert not cnu.proyectar_pension(65, saldo=1000, rp=0.03, agno_actual=2024).con_banda
     with pytest.warns(cnu.AdvertenciaCNU, match="21.419"):
         p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, faj=True, agno_actual=2026)
     assert p.pension[0] == pytest.approx(63.2245, abs=1e-4)

@@ -222,6 +222,11 @@ def construir_parser() -> argparse.ArgumentParser:
     p.add_argument("--rp", type=float, default=None, help="tasa única de retiro programado (TITRP)")
     p.add_argument("--faj", action="store_true",
                    help="incluye Factor de Ajuste (derogado desde el 1-2-2022, Ley 21.419)")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--banda", dest="banda", action="store_true", default=None,
+                   help="fuerza la banda de variación máxima del 10%% (Ley 21.735; por defecto rige "
+                        "con fecha de cálculo desde el 1-9-2025)")
+    g.add_argument("--sin-banda", dest="banda", action="store_false", help="desactiva la banda del 10%%")
     p.add_argument("--csv", action="store_true", help="imprime el resultado como CSV")
     _opciones_comunes(p, benef=True)
     _opciones_faj(p)
@@ -470,8 +475,8 @@ def _ejecutar(args) -> int:
     elif c == "proy":
         r = proyeccion.proyectar_pension(
             args.x, args.y, args.saldo, args.cot_mujer, not args.cony_hombre, args.tabla, args.tabla_benef,
-            rp=_nan_a_none(args.rp), faj=args.faj, edad_maxima=args.edad_maxima, pcent=args.pcent,
-            rp0=args.rp0, criter=args.criter, maxiter=args.maxiter, **comunes,
+            rp=_nan_a_none(args.rp), faj=args.faj, banda=args.banda, edad_maxima=args.edad_maxima,
+            pcent=args.pcent, rp0=args.rp0, criter=args.criter, maxiter=args.maxiter, **comunes,
         )
         cols = r.columnas()
         if args.csv:

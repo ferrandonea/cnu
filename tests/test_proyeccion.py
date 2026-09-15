@@ -115,3 +115,79 @@ def test_faj_vec_sin_tasa_da_nan_y_advierte():
     with pytest.warns(cnu.AdvertenciaCNU, match="vector inexistente"):
         v = cnu.faj_afiliado_vec([65], agno_vector=1999, agno_actual=2014)
     assert np.isnan(v[0])
+
+
+def _variaciones(pension):
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return pension[1:] / pension[:-1]
+
+
+def test_banda_vigencia_por_fecha_de_calculo():
+    assert cnu.VIGENCIA_BANDA == 20250901 and cnu.BANDA_VARIACION == 0.1
+    assert not cnu.banda_vigente(20250831) and cnu.banda_vigente(20250901)
+    assert not cnu.banda_vigente(agno_actual=2024) and cnu.banda_vigente(agno_actual=2025)
+
+
+def test_banda_acota_la_pension_y_mueve_el_saldo():
+    r = cnu.proyectar_pension(65, saldo=1000.0, rp=0.03, agno_actual=2026, banda=True)
+    libre = cnu.proyectar_pension(65, saldo=1000.0, rp=0.03, agno_actual=2026, banda=False)
+    assert r.con_banda and not libre.con_banda
+    assert "con banda 10%" in r.descripcion and "banda" not in libre.descripcion
+    assert r.pension[0] == libre.pension[0]  # la primera pension no cambia
+    # Para todo j >= 1 la pension queda en [0,9; 1,1] x pension(j - 1), salvo que el saldo se agote.
+    v = _variaciones(r.pension)
+    en_banda = (v >= 0.9 - 1e-12) & (v <= 1.1 + 1e-12)
+    agotado = r.pension[1:] == r.saldo[:-1]  # se pago todo lo que quedaba
+    assert np.all(en_banda | agotado)
+    assert (~en_banda & (r.saldo[:-1] > 0)).sum() == 1  # solo el periodo en que se agota la cuenta
+    # El saldo se descuenta con la pension efectivamente pagada.
+    esperado = np.maximum(0.0, (r.saldo[:-1] - r.pension[1:]) * 1.03)
+    np.testing.assert_allclose(r.saldo[1:], esperado)
+    # Los periodos acotados son exactamente aquellos donde la pension pagada difiere de saldo / CNU.
+    assert r.acotado.dtype == bool and r.acotado.shape == r.pension.shape and not r.acotado[0]
+    assert r.acotado.any()
+    c = cnu.proyectar_cnu(65, rp=0.03, agno_actual=2026)
+    np.testing.assert_array_equal(r.acotado[1:], r.pension[1:] != r.saldo[:-1] / c[1:])
+    assert not r.acotado[r.saldo == 0][1:].any()  # con la cuenta agotada ya no hay que acotar
+    i = np.argmax(r.acotado)
+    assert r.pension[i] == pytest.approx(0.9 * r.pension[i - 1]) and libre.pension[i] < 0.9 * r.pension[i - 1]
+    assert list(r.columnas()) == ["edad", "saldo", "pension", "acotado"]
+    assert r.como_matriz().shape == (46, 4) and r.como_matriz()[i, 3] == 1
+
+
+def test_banda_por_defecto_segun_fecha():
+    # Antes del 1-9-2025 no hay banda: la trayectoria es identica a la libre.
+    r = cnu.proyectar_pension(65, saldo=1000.0, rp=0.03, agno_actual=2024)
+    libre = cnu.proyectar_pension(65, saldo=1000.0, rp=0.03, agno_actual=2024, banda=False)
+    assert not r.con_banda and r.acotado is None
+    np.testing.assert_array_equal(r.pension, libre.pension)
+    np.testing.assert_array_equal(r.saldo, libre.saldo)
+    assert r.como_matriz().shape == (46, 3)
+    # Con fsiniestro anterior a la vigencia tampoco, aunque el agno sea 2026.
+    assert not cnu.proyectar_pension(65, rp=0.03, agno_actual=2026, fsiniestro=20250831).con_banda
+    # Desde la vigencia, None coincide con True.
+    r = cnu.proyectar_pension(65, saldo=1000.0, rp=0.03, agno_actual=2026)
+    forzada = cnu.proyectar_pension(65, saldo=1000.0, rp=0.03, agno_actual=2026, banda=True)
+    assert r.con_banda
+    np.testing.assert_array_equal(r.pension, forzada.pension)
+    np.testing.assert_array_equal(r.acotado, forzada.acotado)
+    assert cnu.proyectar_pension(65, rp=0.03, agno_actual=2026, fsiniestro=20250901).con_banda
+    # Forzada en una fecha anterior, se aplica igual.
+    assert cnu.proyectar_pension(65, rp=0.03, agno_actual=2014, banda=True).acotado.any()
+
+
+def test_banda_con_faj_solo_historico():
+    with pytest.warns(cnu.AdvertenciaCNU, match="21.419"):
+        r = cnu.proyectar_pension(65, saldo=1000.0, rp=0.03, faj=True, agno_actual=2026)
+    with pytest.warns(cnu.AdvertenciaCNU, match="21.419"):
+        libre = cnu.proyectar_pension(65, saldo=1000.0, rp=0.03, faj=True, agno_actual=2026, banda=False)
+    assert r.con_faj and r.con_banda and "con FAJ y banda 10%" in r.descripcion
+    assert r.faj == libre.faj and r.pension[0] == libre.pension[0]
+    v = _variaciones(r.pension)
+    en_banda = (v >= 0.9 - 1e-12) & (v <= 1.1 + 1e-12)
+    agotado = r.pension[1:] == r.saldo[:-1] + r.saldo_faj[:-1]
+    assert np.all(en_banda | agotado)
+    assert list(r.columnas()) == ["edad", "saldo", "faj", "saldo_faj", "pension", "acotado"]
+    # Sin banda, el FAJ historico (2014) no cambia.
+    h = cnu.proyectar_pension(65, faj=True, rp=0.03, agno_actual=2014)
+    assert not h.con_banda and h.como_matriz().shape == (46, 5)
