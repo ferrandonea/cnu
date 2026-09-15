@@ -388,3 +388,43 @@ def test_grupo_errores(capsys):
     with pytest.raises(SystemExit) as e:
         main(["grupo", "--afiliado", "65", "--hijo", "10x", "--rp", "0.03"])
     assert e.value.code == 2 and "62m" in capsys.readouterr().err
+
+
+def test_cev(capsys):
+    from cnu.cli import CODIGO_ERROR_CEV, CODIGO_ERROR_GRUPO
+
+    assert main(["cev", "65", "--conyuge", "67h", "--pension", "12", "--fecha-pension", "20260301", "--rv", "0.03"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == ("CEV para mujer de 65 años pensionada el 20260301, grupo familiar: cónyuge sin hijos "
+                         "(tablas rv2020m cb2020h / cb2020h), tasa 3%: factor 1.091431, 100% por edad")
+    r = cnu.calcular_cev(65, [("conyuge", 67, False)], 12, 20260301, 0.03)
+    assert [l.split()[-1] for l in lineas[1:]] == [f"{r.cnu_mujer:.6f}", f"{r.cnu_hombre:.6f}", "1.091431", "100%",
+                                                   "12.000000", "1.097172", "1.10"]
+    assert lineas[-1].split()[0] == "monto"
+    # Tope de 18 UF, porcentaje por edad y minimo de 0,25 UF (indicado en la ultima linea).
+    assert main(["cev", "62", "--pension", "30", "--fecha-pension", "20260301", "--rv", "0.03"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert "25% por edad" in lineas[0] and "sin beneficiarios" in lineas[0]
+    assert lineas[5].split()[-1] == "18.000000" and lineas[-1].split()[-1] == "0.56"
+    assert main(["cev", "65", "--pension", "1", "--fecha-pension", "20260301", "--rv", "0.03"]) == 0
+    assert capsys.readouterr().out.splitlines()[-1].endswith("0.25  (mínimo 0,25 UF)")
+    # Mismas opciones de beneficiarios que cnu grupo, edad actuarial y --pasos.
+    assert main(["cev", "64.6", "--conyuge", "67h", "--hijo", "10", "--hijo-inv", "21m", "parcial", "--pension", "12",
+                 "--fecha-pension", "20260301", "--rv", "0.03", "--pasos"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("CEV para mujer de 65 años pensionada el 20260301, grupo familiar: cónyuge con hijo inválido 50%, "
+                          "hijo no inválido 15%, hijo inválido parcial 15%/11% (tablas rv2020m cb2020h mi2020m / cb2020h mi2020m)")
+    assert "[edad actuarial: mujer 64.6 -> 65]" in out.splitlines()[0]
+    assert "=== CNU mujer ===" in out and "=== CNU hombre de igual edad ===" in out
+    # Errores: CEV que no corresponde (codigo 4) y grupo que la norma no admite (codigo 3).
+    assert main(["cev", "65", "--pension", "12", "--fecha-pension", "20251201", "--rv", "0.03"]) == CODIGO_ERROR_CEV
+    out, err = capsys.readouterr()
+    assert out == "" and "20260102" in err and "Traceback" not in err and "--rp" not in err
+    assert main(["cev", "59", "--pension", "12", "--fecha-pension", "20260301", "--rv", "0.03"]) == CODIGO_ERROR_CEV
+    assert "articulo 68" in capsys.readouterr().err
+    assert main(["cev", "65", "--padres", "88", "--conyuge", "67h", "--pension", "12", "--fecha-pension", "20260301",
+                 "--rv", "0.03"]) == CODIGO_ERROR_GRUPO
+    assert "articulo 58" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as e:  # --pension, --fecha-pension y --rv son obligatorios
+        main(["cev", "65", "--pension", "12", "--fecha-pension", "20260301"])
+    assert e.value.code == 2 and "--rv" in capsys.readouterr().err

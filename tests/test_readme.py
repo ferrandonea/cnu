@@ -65,6 +65,24 @@ def test_ejemplos_actuales_tm2020():
         p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, faj=True, agno_actual=2026)
     assert p.pension[0] == pytest.approx(63.2245, abs=1e-4)
     assert p.faj == pytest.approx(0.022775, abs=1e-6)
+    c = cnu.calcular_cev(65, [("conyuge", 67, False)], pension_referencia=12, fecha_pension=20260301, rv=0.03)
+    assert (c.factor, c.porcentaje, c.pension_referencia, c.compensacion, c.monto) == (1.091431, 1.0, 12, 1.097172, 1.10)
+    assert (c.cnu_mujer, c.cnu_hombre, c.diferencia) == (18.498496, 16.948846, 0.091431)
+    assert c.descripcion == ("CEV para mujer de 65 años pensionada el 20260301, grupo familiar: cónyuge sin hijos "
+                             "(tablas rv2020m cb2020h / cb2020h), tasa 3%: factor 1.091431, 100% por edad")
+    assert c.factor == round(
+        cnu.cnu_grupo_familiar(cnu.Afiliado(65, True), [("conyuge", 67, False)], rv=0.03, fsiniestro=20260301).total
+        / cnu.cnu_grupo_familiar(cnu.Afiliado(65, False), [("conyuge", 67, False)], rv=0.03, fsiniestro=20260301).total, 6)
+    c = cnu.calcular_cev(62, [], pension_referencia=30, fecha_pension=20260301, rv=0.03)
+    assert (c.factor, c.porcentaje, c.pension_referencia, c.monto) == (1.124605, 0.25, 18, 0.56)
+    c = cnu.calcular_cev(65, [], pension_referencia=1, fecha_pension=20260301, rv=0.03)
+    assert (c.compensacion, c.monto, c.minimo_aplicado) == (0.138914, 0.25, True)
+    assert cnu.VIGENCIA_CEV == 20260102 and cnu.TOPE_PENSION_REFERENCIA_UF == 18 and cnu.MINIMO_CEV_UF == 0.25
+    assert cnu.PORCENTAJE_CEV_POR_EDAD == {60: 0.05, 61: 0.15, 62: 0.25, 63: 0.5, 64: 0.75, 65: 1.0}
+    with pytest.raises(cnu.ErrorCEV, match="mujeres"):
+        cnu.calcular_cev(65, [], pension_referencia=12, fecha_pension=20260301, rv=0.03, mujer=False)
+    with pytest.raises(cnu.ErrorCEV, match="20260102"):
+        cnu.calcular_cev(65, [], pension_referencia=12, fecha_pension=20251201, rv=0.03)
     assert cnu.cnu_afiliado(65, fsiniestro=20230630, rp=0.03, agno_actual=2023) == 15.063535
     assert cnu.cnu_afiliado(65, fsiniestro=20230701, rp=0.03, agno_actual=2023) == 15.320124
     assert cnu.describir("soltero sin hijos", "vigente", rp=0.03, agno_actual=2026) == (
@@ -168,6 +186,11 @@ def test_cli_ejemplo(capsys):
                       "(tablas cb2020h b2020m), tasa 3% en el año 2026")
     assert [l.split()[-1] for l in out[1:]] == ["15.456439", "2.409035", "0.135662", "18.001136"]
     assert out[4].split()[0] == "total"
+    assert main(["cev", "65", "--conyuge", "67h", "--pension", "12", "--fecha-pension", "20260301", "--rv", "0.03"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == ("CEV para mujer de 65 años pensionada el 20260301, grupo familiar: cónyuge sin hijos "
+                      "(tablas rv2020m cb2020h / cb2020h), tasa 3%: factor 1.091431, 100% por edad")
+    assert [l.split()[-1] for l in out[1:]] == ["18.498496", "16.948846", "1.091431", "100%", "12.000000", "1.097172", "1.10"]
 
 
 def test_estado_normativo_y_edad_actuarial():

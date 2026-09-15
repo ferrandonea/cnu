@@ -46,6 +46,11 @@ Funciones principales
   la trayectoria de pension aplica la banda de variacion maxima del 10% de la
   Ley N 21.735 desde :data:`VIGENCIA_BANDA` (parametro ``banda`` y
   :func:`banda_vigente`).
+* :func:`calcular_cev`: Compensacion por Diferencias de Expectativa de Vida
+  (Ley N 21.735) de una mujer que se pensiona por vejez desde
+  :data:`VIGENCIA_CEV`: factor ``CNU mujer / CNU hombre`` del grupo familiar,
+  porcentaje por edad (:func:`porcentaje_cev`), tope de 18 UF y minimo de
+  0,25 UF (:class:`ResultadoCEV`, :class:`ErrorCEV`).
 * :func:`faj_afiliado`, :func:`faj_afiliado_vec`, :func:`calcular_faj`:
   Factor de Ajuste (``cnu_faji``, ``cnu_faj``), derogado desde el 1 de
   febrero de 2022 (:data:`DEROGACION_FAJ`; solo para calculos historicos).
@@ -93,6 +98,17 @@ from .core import (  # noqa: E402
     edad_entera,
     tabla_mortalidad,
     tasas_por_periodo,
+)
+from .cev import (  # noqa: E402
+    EDAD_CEV,
+    MINIMO_CEV_UF,
+    PORCENTAJE_CEV_POR_EDAD,
+    TOPE_PENSION_REFERENCIA_UF,
+    VIGENCIA_CEV,
+    ErrorCEV,
+    ResultadoCEV,
+    calcular_cev,
+    porcentaje_cev,
 )
 from .faj import (  # noqa: E402
     DEROGACION_FAJ,
@@ -166,16 +182,17 @@ def main() -> None:
 
 
 __all__ = [
-    "AGNO_VECTOR", "AJUSTE_MENSUAL", "BANDA_VARIACION", "CUOTA_MORTUORIA_UF", "DEROGACION_FAJ", "EDAD_LIMITE_HIJO", "EDAD_MAXIMA", "EDAD_MINIMA",
+    "AGNO_VECTOR", "AJUSTE_MENSUAL", "BANDA_VARIACION", "CUOTA_MORTUORIA_UF", "DEROGACION_FAJ", "EDAD_CEV", "EDAD_LIMITE_HIJO", "EDAD_MAXIMA", "EDAD_MINIMA",
     "EDAD_MINIMA_HIJO",
     "FRACCION_CONYUGE", "FRACCION_CONYUGE_CON_HIJOS", "FRACCION_HIJO", "FRACCION_HIJO_INVALIDO_PARCIAL",
     "FRACCION_MADRE_PADRE", "FRACCION_MADRE_PADRE_CON_HIJOS", "FRACCION_PADRES",
     "GRADO_INVALIDO_PARCIAL", "GRADO_INVALIDO_TOTAL", "GRADO_NO_INVALIDO", "GRADOS_INVALIDEZ", "INICIO_TITRP",
-    "ROL_AFILIADO", "ROL_BENEFICIARIO", "ROL_INVALIDO",
-    "TABLA_AFILIADO", "TABLA_BENEFICIARIO", "TABLA_VIGENTE", "TIPOS_BENEFICIARIO", "VIGENCIA_BANDA",
-    "AdvertenciaCNU", "Afiliado", "Beneficiario", "CNUGrupoFamiliar", "ComponenteCNU", "ErrorGrupoFamiliar",
-    "ProyeccionPension", "TablaMortalidad",
-    "agno_tabla_por_siniestro", "agno_vector_efectivo", "banda_vigente", "calcular_faj", "cargar_tabla_mortalidad", "cargar_vector_tasas",
+    "MINIMO_CEV_UF", "PORCENTAJE_CEV_POR_EDAD", "ROL_AFILIADO", "ROL_BENEFICIARIO", "ROL_INVALIDO",
+    "TABLA_AFILIADO", "TABLA_BENEFICIARIO", "TABLA_VIGENTE", "TIPOS_BENEFICIARIO", "TOPE_PENSION_REFERENCIA_UF",
+    "VIGENCIA_BANDA", "VIGENCIA_CEV",
+    "AdvertenciaCNU", "Afiliado", "Beneficiario", "CNUGrupoFamiliar", "ComponenteCNU", "ErrorCEV", "ErrorGrupoFamiliar",
+    "ProyeccionPension", "ResultadoCEV", "TablaMortalidad",
+    "agno_tabla_por_siniestro", "agno_vector_efectivo", "banda_vigente", "calcular_cev", "calcular_faj", "cargar_tabla_mortalidad", "cargar_vector_tasas",
     "cnu_afiliado", "cnu_afiliado_vec", "cnu_conyuge", "cnu_conyuge_con_hijos", "cnu_conyuge_con_hijos_vec",
     "cnu_conyuge_vec", "cnu_grupo_familiar", "cnu_grupo_familiar_vec", "cnu_hijo", "cnu_hijo_invalido", "cnu_hijo_invalido_vec", "cnu_hijo_vec",
     "cnu_madre_padre", "cnu_madre_padre_vec", "cnu_padres", "cnu_padres_vec",
@@ -185,7 +202,7 @@ __all__ = [
     "cnu_sobrevivencia_hijo_vec", "cnu_sobrevivencia_madre_padre", "cnu_sobrevivencia_madre_padre_vec",
     "cnu_sobrevivencia_padres", "cnu_sobrevivencia_padres_vec", "describir", "edad_actuarial", "edad_entera",
     "escribir_matriz_mata", "faj_afiliado", "faj_afiliado_vec", "faj_derogado", "faj_funcion_objetivo",
-    "guardar_tabla_mortalidad", "guardar_vector_tasas", "leer_matriz_mata", "main",
+    "guardar_tabla_mortalidad", "guardar_vector_tasas", "leer_matriz_mata", "main", "porcentaje_cev",
     "proyectar_cnu", "proyectar_pension", "tabla_mortalidad", "tabla_por_fecha", "tablas_disponibles",
     "tasas_por_periodo",
     "vectores_disponibles",

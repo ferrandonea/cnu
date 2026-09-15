@@ -8,7 +8,7 @@ import re
 import sys
 import warnings
 
-from . import __version__, core, faj as _faj, grupo as _grupo, proyeccion, tablas
+from . import __version__, cev as _cev, core, faj as _faj, grupo as _grupo, proyeccion, tablas
 from .grupo import etiqueta_conyuge, etiqueta_hijo_invalido, etiqueta_madre_padre, etiqueta_padres  # noqa: F401
 
 
@@ -48,6 +48,22 @@ def _opcion_hijo_invalido(p: argparse.ArgumentParser) -> None:
 
 def _opcion_padre(p: argparse.ArgumentParser, quien: str) -> None:
     p.add_argument("--padre", action="store_true", help=f"el beneficiario es el padre {quien} (por defecto, la madre)")
+
+
+def _opciones_beneficiarios(p: argparse.ArgumentParser) -> None:
+    """Opciones repetibles de beneficiarios de ``cnu grupo`` y ``cnu cev`` (ver :func:`_beneficiarios_cli`)."""
+    p.add_argument("--conyuge", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
+                   help="cónyuge (por defecto mujer; 62m, 65h)")
+    p.add_argument("--conviviente", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
+                   help="conviviente civil (misma fórmula que el cónyuge; por defecto mujer)")
+    p.add_argument("--hijo", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
+                   help="hijo no inválido, repetible (por defecto hombre; 10, 14m)")
+    p.add_argument("--hijo-inv", type=_persona, action="append", default=[], nargs="+", metavar="EDAD[h|m] [total|parcial]",
+                   help="hijo inválido, repetible: edad y sexo más el grado (por defecto total; 20 total, 21m parcial)")
+    p.add_argument("--madre-padre", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
+                   help="madre (m, por defecto) o padre (h) de hijos de filiación no matrimonial, repetible")
+    p.add_argument("--padres", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
+                   help="madre (m, por defecto) o padre (h) del afiliado, repetible (a lo más uno de cada uno)")
 
 
 def _opciones_faj(p: argparse.ArgumentParser) -> None:
@@ -186,22 +202,28 @@ def construir_parser() -> argparse.ArgumentParser:
                                      " sin --afiliado, pensión de sobrevivencia")
     p.add_argument("--afiliado", type=_persona, default=None, metavar="EDAD[h|m]",
                    help="edad y sexo del afiliado (p.ej. 65 o 60m; por defecto hombre); sin él, sobrevivencia")
-    p.add_argument("--conyuge", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
-                   help="cónyuge (por defecto mujer; 62m, 65h)")
-    p.add_argument("--conviviente", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
-                   help="conviviente civil (misma fórmula que el cónyuge; por defecto mujer)")
-    p.add_argument("--hijo", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
-                   help="hijo no inválido, repetible (por defecto hombre; 10, 14m)")
-    p.add_argument("--hijo-inv", type=_persona, action="append", default=[], nargs="+", metavar="EDAD[h|m] [total|parcial]",
-                   help="hijo inválido, repetible: edad y sexo más el grado (por defecto total; 20 total, 21m parcial)")
-    p.add_argument("--madre-padre", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
-                   help="madre (m, por defecto) o padre (h) de hijos de filiación no matrimonial, repetible")
-    p.add_argument("--padres", type=_persona, action="append", default=[], metavar="EDAD[h|m]",
-                   help="madre (m, por defecto) o padre (h) del afiliado, repetible (a lo más uno de cada uno)")
+    _opciones_beneficiarios(p)
     p.add_argument("--uf", type=float, default=None, metavar="VALOR_UF",
                    help="valor de la UF en las unidades del saldo: agrega la cuota mortuoria (15 UF) como componente")
     _opciones_comunes(p, benef=True)
     _opciones_tasa(p)
+
+    p = sub.add_parser("cev", help="Compensación por Diferencias de Expectativa de Vida (Ley N° 21.735) de una mujer"
+                                   " pensionada por vejez desde el 2-1-2026: factor CNU mujer / CNU hombre del grupo"
+                                   " familiar, porcentaje por edad, tope de 18 UF y mínimo de 0,25 UF (cálculo referencial)")
+    p.add_argument("edad", type=float, help="edad de la mujer a la fecha de pensión (60 a 64: porcentaje parcial; 65 o más: 100%%)")
+    p.add_argument("--pension", type=float, required=True, metavar="UF",
+                   help="pensión de referencia mensual en UF (anualidad CEV; se acota a 18 UF)")
+    p.add_argument("--fecha-pension", type=int, required=True, metavar="YYYYMMDD",
+                   help="fecha de pensión: fija las tablas vigentes y la vigencia del beneficio (desde 20260102)")
+    p.add_argument("--rv", type=float, required=True,
+                   help="tasa de la anualidad: tasa implícita promedio de las rentas vitalicias de vejez de los seis meses"
+                        " anteriores a la fecha de pensión (la publica la SP)")
+    _opciones_beneficiarios(p)
+    p.add_argument("--tabla", default=core.TABLA_AFILIADO, help="tabla de la afiliada (por defecto: %(default)s)")
+    p.add_argument("--tabla-benef", default=core.TABLA_BENEFICIARIO, help="tabla de los beneficiarios (por defecto: %(default)s)")
+    p.add_argument("--dir-tablas", default=None, help="directorio con tablas de mortalidad propias")
+    p.add_argument("--pasos", action="store_true", help="imprime el cálculo periodo a periodo de ambos CNU")
 
     p = sub.add_parser("faj", help="Factor de Ajuste (cnu_faji); derogado desde el 1-2-2022 (Ley 21.419)")
     p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
@@ -294,13 +316,16 @@ def _nota_edades(**edades) -> str:
 
 CODIGO_ERROR_TASA = 2
 CODIGO_ERROR_GRUPO = 3
+CODIGO_ERROR_CEV = 4
 
 
 def main(argv: list[str] | None = None) -> int:
     """Ejecuta la CLI. Sin tasa determinable (o con vector inexistente) escribe
     el mensaje de la API en stderr y devuelve :data:`CODIGO_ERROR_TASA`; un
     grupo familiar que la norma no admite (articulo 58) devuelve
-    :data:`CODIGO_ERROR_GRUPO`. Las advertencias de la API (p.ej. FAJ
+    :data:`CODIGO_ERROR_GRUPO` y una CEV que no corresponde (hombre, fecha
+    anterior a la vigencia, edad menor que 60, pension nula) devuelve
+    :data:`CODIGO_ERROR_CEV`. Las advertencias de la API (p.ej. FAJ
     derogado) se escriben en stderr y no cambian el codigo de salida."""
     args = construir_parser().parse_args(argv)
     try:
@@ -310,6 +335,9 @@ def main(argv: list[str] | None = None) -> int:
     except _grupo.ErrorGrupoFamiliar as e:
         print(f"cnu {args.comando}: error: {e}", file=sys.stderr)
         return CODIGO_ERROR_GRUPO
+    except _cev.ErrorCEV as e:
+        print(f"cnu {args.comando}: error: {e}", file=sys.stderr)
+        return CODIGO_ERROR_CEV
     except (ValueError, FileNotFoundError) as e:
         print(f"cnu {args.comando}: error: {e}", file=sys.stderr)
         print("Entregue la tasa con --rp (TITRP), --rv o --agno-vector, o un --fsiniestro anterior a 2014.",
@@ -330,6 +358,27 @@ def _ejecutar(args) -> int:
         print("Vectores de tasas:")
         for v in tablas.vectores_disponibles():
             print(f"  cnu_vec{v}")
+        return 0
+
+    if c == "cev":
+        beneficiarios = _beneficiarios_cli(args)
+        r = _cev.calcular_cev(args.edad, beneficiarios, args.pension, args.fecha_pension, args.rv,
+                              tabla=args.tabla, tabla_benef=args.tabla_benef, dir_tablas=args.dir_tablas)
+        edades = {"mujer": args.edad}
+        for i, b in enumerate(beneficiarios, 1):
+            edades[f"{b.tipo.replace('_', ' ')} {i}"] = b.edad
+        print(r.descripcion + _nota_edades(**edades))
+        if args.pasos:  # la descripcion va primero; el detalle periodo a periodo se imprime al recalcular
+            r = _cev.calcular_cev(args.edad, beneficiarios, args.pension, args.fecha_pension, args.rv,
+                                  tabla=args.tabla, tabla_benef=args.tabla_benef, dir_tablas=args.dir_tablas, pasos=True)
+        print(f"  {'CNU mujer (' + ' '.join(r.grupo_mujer.tablas) + ')':<44s}{r.cnu_mujer:12.6f}")
+        print(f"  {'CNU hombre (' + ' '.join(r.grupo_hombre.tablas) + ')':<44s}{r.cnu_hombre:12.6f}")
+        print(f"  {'factor de corrección (mujer/hombre)':<44s}{r.factor:12.6f}")
+        print(f"  {'porcentaje por edad':<44s}{r.porcentaje * 100:11.6g}%")
+        print(f"  {'pensión de referencia acotada (UF)':<44s}{r.pension_referencia:12.6f}")
+        print(f"  {'compensación calculada (UF)':<44s}{r.compensacion:12.6f}")
+        minimo = "  (mínimo 0,25 UF)" if r.minimo_aplicado else ""
+        print(f"  {'monto mensual (UF)':<44s}{r.monto:12.2f}{minimo}")
         return 0
 
     comunes = dict(agno_vector=args.agno_vector, agno_actual=args.agno_actual, fsiniestro=args.fsiniestro,

@@ -125,6 +125,23 @@ p = cnu.proyectar_pension(65, saldo=1000, rp=0.03, faj=True, agno_actual=2026)
 p.edad, p.saldo, p.pension, p.faj, p.saldo_faj   # p.pension[0] = 63.2245, p.faj = 0.022775
 p.to_dataframe()        # requiere pandas
 
+# Compensación por Diferencias de Expectativa de Vida (CEV, Ley N° 21.735): mujer que se pensiona por vejez
+# desde el 2-1-2026 (cnu.VIGENCIA_CEV). Factor = CNU del grupo con tabla de mujer / CNU del mismo grupo con
+# tabla de hombre de igual edad (tablas vigentes a la fecha de pensión); rv es la tasa implícita promedio de
+# rentas vitalicias de vejez de los últimos seis meses; la pensión de referencia (anualidad CEV) va en UF
+c = cnu.calcular_cev(65, [("conyuge", 67, False)], pension_referencia=12, fecha_pension=20260301, rv=0.03)
+c.cnu_mujer, c.cnu_hombre, c.factor     # 18.498496, 16.948846, 1.091431 (c.diferencia = factor - 1 = 0.091431)
+c.porcentaje, c.pension_referencia      # 1.0 (100% a los 65 años), 12 (tope 18 UF)
+c.compensacion, c.monto                 # 1.097172 = 12 × (1.091431 − 1) × 1.0; monto mensual 1.10 UF (dos decimales)
+c.descripcion   # "CEV para mujer de 65 años pensionada el 20260301, grupo familiar: cónyuge sin hijos
+                #  (tablas rv2020m cb2020h / cb2020h), tasa 3%: factor 1.091431, 100% por edad"
+c = cnu.calcular_cev(62, [], pension_referencia=30, fecha_pension=20260301, rv=0.03)
+c.factor, c.porcentaje, c.pension_referencia, c.monto   # 1.124605, 0.25 (62 años), 18 (acotada), 0.56
+c = cnu.calcular_cev(65, [], pension_referencia=1, fecha_pension=20260301, rv=0.03)
+c.compensacion, c.monto, c.minimo_aplicado              # 0.138914, 0.25 (mínimo de 0,25 UF), True
+cnu.calcular_cev(65, [], pension_referencia=12, fecha_pension=20260301, rv=0.03, mujer=False)   # ErrorCEV: solo mujeres
+cnu.calcular_cev(65, [], pension_referencia=12, fecha_pension=20251201, rv=0.03)   # ErrorCEV: anterior a 20260102 (stock)
+
 # Con fecha del siniestro, la tabla es la vigente a esa fecha
 cnu.cnu_afiliado(65, fsiniestro=20230630, rp=0.03, agno_actual=2023)   # 15.063535  (cb2014h)
 cnu.cnu_afiliado(65, fsiniestro=20230701, rp=0.03, agno_actual=2023)   # 15.320124  (cb2020h)
@@ -287,6 +304,8 @@ cnu faj 65 62 --rp 0.03 --agno-vector 2013
 cnu proy 65 --csv --rp 0.03 > trayectoria.csv      # con banda 10% (fecha de cálculo desde el 1-9-2025); columna acotado
 cnu proy 65 --sin-banda --rp 0.03                     # sin banda; --banda la fuerza en fechas anteriores
 cnu proy 65 --faj --csv --rp 0.03 --agno-actual 2014 > trayectoria.csv   # FAJ histórico
+cnu cev 65 --conyuge 67h --pension 12 --fecha-pension 20260301 --rv 0.03   # CEV: mismas opciones de beneficiarios que grupo
+cnu cev 62 --pension 30 --fecha-pension 20260301 --rv 0.03                 # 25% a los 62 años; pensión acotada a 18 UF
 cnu tablas
 ```
 
@@ -315,6 +334,15 @@ CNU RP para grupo familiar: afiliado, cónyuge con hijos 50%/60%, hijo no invál
   cónyuge con hijos 50%/60%                       2.409035
   hijo no inválido 15%                            0.135662
   total                                          18.001136
+$ cnu cev 65 --conyuge 67h --pension 12 --fecha-pension 20260301 --rv 0.03
+CEV para mujer de 65 años pensionada el 20260301, grupo familiar: cónyuge sin hijos (tablas rv2020m cb2020h / cb2020h), tasa 3%: factor 1.091431, 100% por edad
+  CNU mujer (rv2020m cb2020h)                    18.498496
+  CNU hombre (cb2020h)                           16.948846
+  factor de corrección (mujer/hombre)             1.091431
+  porcentaje por edad                                 100%
+  pensión de referencia acotada (UF)             12.000000
+  compensación calculada (UF)                     1.097172
+  monto mensual (UF)                                  1.10
 ```
 
 En `cnu grupo` cada beneficiario se entrega como `EDAD[h|m]` (el sufijo fija
@@ -322,6 +350,15 @@ el sexo; sin él rige el del tipo: cónyuge y conviviente mujer, hijos hombre,
 `--madre-padre` y `--padres` madre) y `--hijo-inv` admite además el grado
 `total` (por defecto) o `parcial`. Un grupo que la norma no admite (artículo
 58) termina con el mensaje en stderr y código de salida 3.
+
+`cnu cev` recibe la edad de la mujer a la fecha de pensión, los beneficiarios
+con las mismas opciones repetibles de `cnu grupo` (el cónyuge de una mujer se
+indica con `h`), la pensión de referencia mensual en UF (`--pension`), la
+fecha de pensión (`--fecha-pension`, que fija las tablas vigentes) y la tasa
+de la anualidad (`--rv`, la tasa implícita promedio de rentas vitalicias de
+vejez de los seis meses anteriores, que publica la SP). Una CEV que no
+corresponde (fecha anterior al 2 de enero de 2026, edad menor que 60,
+pensión de referencia nula) termina con código de salida 4.
 
 ## Estado normativo
 
@@ -429,9 +466,10 @@ La Ley N° 21.735 (marzo de 2025) introdujo una banda de variación máxima del
 10% para los recálculos de las pensiones en retiro programado y renta
 temporal derivados de los ajustes de la TITRP (desde el 1 de septiembre de
 2025) y la Compensación por Diferencias de Expectativa de Vida (CEV),
-regulada en la Letra C del Título XIX del Libro III. Ninguna de las dos
-modifica la fórmula del CNU: la banda actúa sobre la pensión resultante y la
-CEV es un beneficio adicional.
+regulada en la Letra C del Título XIX del Libro III (Norma de Carácter
+General N° 350, de 12 de septiembre de 2025). Ninguna de las dos modifica la
+fórmula del CNU: la banda actúa sobre la pensión resultante y la CEV es un
+beneficio adicional que se calcula con dos CNU. Ambas están implementadas.
 
 **Banda del 10%.** `proyectar_pension` (y `cnu proy`) la aplica cuando la
 fecha de cálculo (`fsiniestro` o el 31 de diciembre de `agno_actual`) es
@@ -451,7 +489,47 @@ de la proyección. Fuente: Ley N° 21.735 y oficio de la Superintendencia de
 Pensiones del 17 de abril de 2025 con instrucciones a las AFP (ver
 [Referencias](#referencias)).
 
-**CEV.** No está implementada en este paquete.
+**CEV.** `calcular_cev` (y `cnu cev`) calcula la compensación mensual de una
+mujer que se pensiona por vejez a partir del 2 de enero de 2026
+(`cnu.VIGENCIA_CEV`, letra b del Capítulo III de la Letra C del Título XIX)
+como `pensión_referencia × (factor − 1) × porcentaje`, con:
+
+* **Factor de corrección**: razón entre el CNU del grupo familiar de la mujer
+  (`cnu_grupo_familiar` con `Afiliado(edad, mujer=True)`) y el CNU del mismo
+  grupo con la tabla de un hombre de igual edad (`mujer=False`), con las
+  tablas vigentes a la fecha de pensión y la edad actuarial. El Compendio
+  escribe el factor como esa razón menos 1 (`c.diferencia`); la fórmula es la
+  misma. El grupo familiar y el sexo de cada beneficiario se conservan en
+  ambos CNU ("para el cálculo del CNU hombre se considerará el saldo y grupo
+  familiar que tuviera la mujer a la edad que se pensionó").
+* **Tasa de la anualidad** (`rv`): la tasa de interés promedio implícita de
+  las rentas vitalicias de vejez otorgadas en los seis meses anteriores a la
+  fecha de pensión, que la SP informa mensualmente; el paquete no la
+  descarga.
+* **Porcentaje por edad de pensión** (`cnu.PORCENTAJE_CEV_POR_EDAD`,
+  `porcentaje_cev`), tabla de beneficio del Capítulo II, número 2, letra b:
+  65 años o más 100%, 64 años 75%, 63 años 50%, 62 años 25%, 61 años 15%,
+  60 años 5%; menos de 60 años 0% (la pensión anticipada del artículo 68 no
+  da derecho, y el paquete lanza `ErrorCEV`). No hay recálculos posteriores
+  por cumplimiento de años.
+* **Tope y mínimo**: la pensión de referencia (la "anualidad CEV", renta
+  vitalicia inmediata simple que financia el saldo, en UF) se acota a 18 UF
+  (`cnu.TOPE_PENSION_REFERENCIA_UF`) y el beneficio mensual no baja de 0,25
+  UF (`cnu.MINIMO_CEV_UF`); el monto se expresa en UF con dos decimales
+  (`c.monto`; `c.compensacion` conserva el valor sin redondear ni mínimo).
+
+**Cálculo referencial.** La concesión, la validación de los requisitos y el
+pago los hace el Instituto de Previsión Social (IPS) a partir del cálculo de
+la AFP (Capítulo IV); este paquete solo reproduce la fórmula. La elegibilidad
+(cotización al Fondo Autónomo de Protección Previsional antes de los 50 años,
+pensión sin cobertura del SIS, trabajos pesados) es un dato de entrada que no
+se valida. Quedan fuera el **stock de pensionadas al 1 de enero de 2026**
+(letra a del Capítulo III: se calcula con la PAFE, las tablas y la tasa
+vigentes al 1 de abril de 2025 y la edad a esa fecha; una fecha de pensión
+anterior a `cnu.VIGENCIA_CEV` lanza `ErrorCEV`) y la pensión de **invalidez**
+(letra c: 100% sin escala por edad). Fuentes: Compendio, Libro III, Título
+XIX, Letra C, Capítulos II y III, y ficha de ChileAtiende (ver
+[Referencias](#referencias)).
 
 ## Tablas de mortalidad
 
@@ -642,8 +720,16 @@ la actualización no introduzca una tasa por defecto.
 * Superintendencia de Pensiones, Nota Técnica N° 9 (noviembre de 2024):
   https://www.spensiones.cl/portal/institucional/594/articles-16151_recurso_1.pdf
 * Superintendencia de Pensiones, Compendio, Libro III, Título XIX, Letra C.
-  Compensación por Diferencias de Expectativa de Vida (Ley N° 21.735):
-  https://www.spensiones.cl/portal/compendio/596/w3-propertyvalue-10821.html
+  Compensación por Diferencias de Expectativa de Vida (Ley N° 21.735; NCG
+  N° 350): https://www.spensiones.cl/portal/compendio/596/w3-propertyvalue-10821.html;
+  Capítulo II, Requisitos y tabla de porcentaje por edad:
+  https://www.spensiones.cl/portal/compendio/596/w3-propertyvalue-10834.html;
+  Capítulo III, Cálculo de la compensación (factor de corrección, anualidad
+  CEV, tope de 18 UF y mínimo de 0,25 UF):
+  https://www.spensiones.cl/portal/compendio/596/w3-propertyvalue-10835.html
+* ChileAtiende, Compensación por Diferencias de Expectativa de Vida para las
+  mujeres (porcentajes por edad, concesión por el IPS):
+  https://www.chileatiende.gob.cl/fichas/130452-compensacion-por-diferencia-de-expectativa-de-vida-para-las-mujeres
 * Superintendencia de Pensiones, Ley N° 21.735 (26 de marzo de 2025):
   https://www.spensiones.cl/portal/institucional/594/w3-article-16483.html
   y banda de variación máxima para el retiro programado:

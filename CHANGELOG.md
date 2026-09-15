@@ -9,6 +9,21 @@ y el proyecto sigue [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Compensación por Diferencias de Expectativa de Vida (CEV, Ley N° 21.735;
+  Compendio, Libro III, Título XIX, Letra C): `calcular_cev` y `cnu cev`
+  para una mujer que se pensiona por vejez desde el 2 de enero de 2026
+  (`VIGENCIA_CEV`). Factor de corrección como razón entre el CNU del grupo
+  familiar con tabla de mujer y con tabla de hombre de igual edad
+  (`cnu_grupo_familiar`, tablas vigentes a la fecha de pensión, tasa `rv`),
+  porcentaje por edad de pensión (`PORCENTAJE_CEV_POR_EDAD`,
+  `porcentaje_cev`: 100% a los 65 años, 75/50/25/15/5% de 64 a 60), pensión
+  de referencia acotada a 18 UF (`TOPE_PENSION_REFERENCIA_UF`) y monto
+  mínimo de 0,25 UF (`MINIMO_CEV_UF`); resultado `ResultadoCEV` con ambos
+  grupos, y `ErrorCEV` para hombre, fecha anterior a la vigencia, edad menor
+  que 60 o pensión nula. Cálculo referencial (la concesión la hace el IPS);
+  el stock al 1 de enero de 2026 y la pensión de invalidez quedan fuera.
+  README: ejemplos verificados y sección "Estado normativo" con la CEV
+  implementada.
 - README: sección "Mantención" con la lista de verificación trimestral de la
   TITRP de referencia (dónde la publica la SP, circular vigente, lugares del
   README y tests que citan la cifra y comando que los verifica).
