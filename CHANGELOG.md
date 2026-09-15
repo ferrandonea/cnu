@@ -5,12 +5,81 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
 El formato se basa en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 y el proyecto sigue [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] — 2026-09-15
+
+Grupo familiar completo del Anexo N° 7, Ley N° 21.735 (banda del 10% y
+CEV) y mantención trimestral de la TITRP (PRD #17). Cierra los tres
+pendientes del cierre de la 0.3.0.
 
 ### Added
 
-- Compensación por Diferencias de Expectativa de Vida (CEV, Ley N° 21.735;
-  Compendio, Libro III, Título XIX, Letra C): `calcular_cev` y `cnu cev`
+#### Grupo familiar completo (Anexo N° 7 del Libro III)
+
+- Núcleo de anualidad generalizado (límite de períodos, condición de
+  fallecimiento del afiliado, ajuste 11/24 temporal y porcentaje) que sirve a
+  todas las letras del Anexo; las tres funciones existentes conservan sus
+  valores de referencia. Constantes públicas del artículo 58 del D.L.
+  N° 3.500: `FRACCION_CONYUGE_CON_HIJOS`, `FRACCION_HIJO`,
+  `FRACCION_HIJO_INVALIDO_PARCIAL`, `FRACCION_MADRE_PADRE`,
+  `FRACCION_MADRE_PADRE_CON_HIJOS`, `FRACCION_PADRES`, `EDAD_LIMITE_HIJO` (24)
+  y `EDAD_MINIMA_HIJO` (0).
+- Hijo no inválido, 15% hasta los 24 años: `cnu_hijo` (letra 2.e) y
+  `cnu_sobrevivencia_hijo` (letra 1.d); devuelven 0 desde los 24.
+- Hijo inválido con tabla de inválidos, total (15% vitalicio) o parcial (15%
+  hasta los 24 y 11% después): `cnu_hijo_invalido` (letra 2.f) y
+  `cnu_sobrevivencia_hijo_invalido` (letra 1.e), parámetro `parcial`.
+- Cónyuge con hijos con derecho a pensión, 50% hasta los 24 años del hijo
+  menor (`h`) y 60% después, o 50% vitalicio con `hijo_invalido`:
+  `cnu_conyuge_con_hijos` (letras 2.c y 2.d) y
+  `cnu_sobrevivencia_conyuge_con_hijos` (letras 1.b y 1.c); con `h >= 24`
+  coinciden exactamente con el cónyuge sin hijos.
+- Conviviente civil (Ley N° 20.830): parámetro `conviviente=True` en las
+  cuatro funciones del cónyuge (letras 1.l, 1.n, 1.p, 2.m, 2.o y 2.q), mismo
+  valor y descripción propia.
+- Madre o padre de hijos de filiación no matrimonial, 36% sin hijos con
+  derecho y 30%/36% o 30% vitalicio con ellos: `cnu_madre_padre` (letras
+  2.i, 2.j y 2.k) y `cnu_sobrevivencia_madre_padre` (letras 1.h, 1.i y 1.j),
+  parámetros `h` (opcional), `hijo_invalido` y `madre`.
+- Madre o padre del afiliado, 50% cada uno, uno por llamada: `cnu_padres`
+  (letra 2.l) y `cnu_sobrevivencia_padres` (letra 1.k).
+- Grupo familiar (`cnu.grupo`): `cnu_grupo_familiar(afiliado, beneficiarios,
+  valor_uf, ...)` con `Afiliado`, `Beneficiario` (tipos en
+  `TIPOS_BENEFICIARIO`), resultado `CNUGrupoFamiliar` (total como suma exacta,
+  lista de `ComponenteCNU` con porcentajes por tramo y tablas resueltas,
+  `to_dict`), tramos 50%/60% y 30%/36% decididos desde los hijos con derecho
+  de la lista, exclusiones del artículo 58 con `ErrorGrupoFamiliar`
+  (`ValueError`) y cuota mortuoria opcional (`CUOTA_MORTUORIA_UF` = 15, en
+  las unidades del saldo con `valor_uf`). `describir` acepta el resultado.
+- Versiones vectoriales de todas las funciones nuevas (`*_vec`, con `nan` y
+  `AdvertenciaCNU` en las filas no calculables) y `cnu_grupo_familiar_vec`
+  (afiliado, cónyuge o conviviente y hasta `k` hijos por columnas, con sexo y
+  grado `GRADO_NO_INVALIDO`, `GRADO_INVALIDO_TOTAL`, `GRADO_INVALIDO_PARCIAL`;
+  `sobrevivencia`, `valor_uf` y matriz opcional de componentes).
+- CLI: subcomandos `hijo`, `sobrev-hijo`, `hijo-inv`, `sobrev-hijo-inv`,
+  `conyuge-ch`, `sobrev-conyuge-ch`, `madre-padre`, `sobrev-madre-padre`,
+  `padres`, `sobrev-padres` y `grupo` (opciones repetibles `--afiliado`,
+  `--conyuge`, `--conviviente`, `--hijo`, `--hijo-inv`, `--madre-padre`,
+  `--padres`, `--uf`; aporte de cada componente antes del total; código de
+  salida 3 para un grupo no admitido); `--conviviente` en `conyuge` y
+  `sobrev`; la primera línea nombra al beneficiario y el porcentaje.
+- Tests: transcripciones independientes de las letras del Anexo con valores
+  de referencia documentados, invariantes entre funciones (grupo = suma de
+  componentes, conviviente = cónyuge, hijo a los 24 = 0, vectorial =
+  escalar fila a fila) y ejemplos del README verificados.
+
+#### Ley N° 21.735
+
+- Banda de variación máxima del 10% en `proyectar_pension` (`VIGENCIA_BANDA`
+  = 20250901, `BANDA_VARIACION`, `banda_vigente`): por defecto (`banda=None`)
+  rige cuando la fecha de cálculo es igual o posterior al 1 de septiembre de
+  2025; `True`/`False` la fuerzan. La pensión de cada período `j ≥ 1` queda
+  en [0,9; 1,1] × pensión anterior, la primera pensión no cambia, el saldo se
+  descuenta con la pensión pagada y nunca se supera el saldo disponible.
+  `ProyeccionPension.acotado` marca los períodos acotados y la descripción
+  dice "con banda 10%". CLI: `cnu proy --banda | --sin-banda` y columna
+  `acotado`. Las trayectorias anteriores a la vigencia no cambian.
+- Compensación por Diferencias de Expectativa de Vida (CEV; Compendio, Libro
+  III, Título XIX, Letra C): módulo `cnu.cev` con `calcular_cev` y `cnu cev`
   para una mujer que se pensiona por vejez desde el 2 de enero de 2026
   (`VIGENCIA_CEV`). Factor de corrección como razón entre el CNU del grupo
   familiar con tabla de mujer y con tabla de hombre de igual edad
@@ -20,13 +89,21 @@ y el proyecto sigue [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   de referencia acotada a 18 UF (`TOPE_PENSION_REFERENCIA_UF`) y monto
   mínimo de 0,25 UF (`MINIMO_CEV_UF`); resultado `ResultadoCEV` con ambos
   grupos, y `ErrorCEV` para hombre, fecha anterior a la vigencia, edad menor
-  que 60 o pensión nula. Cálculo referencial (la concesión la hace el IPS);
-  el stock al 1 de enero de 2026 y la pensión de invalidez quedan fuera.
-  README: ejemplos verificados y sección "Estado normativo" con la CEV
-  implementada.
+  que 60 o pensión nula (código de salida 4 en la CLI). Cálculo referencial
+  (la concesión la hace el IPS); el stock al 1 de enero de 2026 y la pensión
+  de invalidez quedan fuera.
+
+#### Mantención
+
 - README: sección "Mantención" con la lista de verificación trimestral de la
   TITRP de referencia (dónde la publica la SP, circular vigente, lugares del
   README y tests que citan la cifra y comando que los verifica).
+- README: "Estado normativo" reescrito con todos los beneficiarios del
+  Anexo N° 7 como cubiertos, la banda y la CEV implementadas y una sección
+  "Fuera de alcance" (elegibilidad, reparto de sobrevivencia, recálculos
+  trimestrales, stock de la CEV, otros beneficios del Seguro Social
+  Previsional, datos externos y las letras 1.f/1.g/2.g/2.h y
+  1.m/1.o/2.n/2.p del Anexo). `HANDOFF.md` reducido a esos pendientes.
 
 ### TITRP de referencia
 

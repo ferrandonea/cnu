@@ -231,4 +231,4 @@ def test_version_cli(capsys):
     with pytest.raises(SystemExit) as e:
         main(["--version"])
     assert e.value.code == 0
-    assert capsys.readouterr().out.strip() == f"cnu {cnu.__version__}" == "cnu 0.3.0"
+    assert capsys.readouterr().out.strip() == f"cnu {cnu.__version__}" == "cnu 0.4.0"

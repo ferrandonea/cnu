@@ -409,27 +409,26 @@ Libro III quedó derogado. `faj_afiliado`, `faj_afiliado_vec` y
 históricos: con fecha de cálculo igual o posterior a `cnu.DEROGACION_FAJ`
 (20220201) emiten una `AdvertenciaCNU` y devuelven el valor de todos modos.
 
-### Beneficiarios cubiertos y pendientes
+### Beneficiarios cubiertos
 
-| Cubierto | Pendiente |
-|---|---|
-| Afiliado (`cnu_afiliado`) | Hijos sin cónyuge ni madre o padre con derecho a pensión (letras 1.f, 1.g, 2.g y 2.h, porcentaje con 0,5/n) |
-| Cónyuge sin hijos, pensión de vejez (`cnu_conyuge`, letra 2.b del Anexo N° 7) | Conviviente civil sin hijos comunes que concurre con hijos del causante (letras 1.m, 1.o, 2.n y 2.p, 15% mientras haya hijos con derecho) |
-| Sobrevivencia de cónyuge sin hijos (`cnu_sobrevivencia_conyuge`, letra 1.a) | |
-| Grupo familiar completo: CNU total como suma del afiliado y de cada beneficiario de la lista, con los tramos del artículo 58 decididos desde los hijos con derecho (`cnu_grupo_familiar`, `cnu grupo`) | |
-| Cuota mortuoria de 15 UF (`CUOTA_MORTUORIA_UF`), componente opcional del grupo familiar en las unidades del saldo (`valor_uf`) | |
-| Grupo familiar vectorial: afiliado, cónyuge o conviviente y hasta `k` hijos por fila, con total y matriz de componentes (`cnu_grupo_familiar_vec`); los grupos con madre o padre no matrimonial o con padres del afiliado se calculan con las vectoriales individuales | |
-| Cónyuge con hijos con derecho a pensión: 50% hasta los 24 años del hijo menor y 60% después, o 50% vitalicio con algún hijo inválido, pensión de vejez o invalidez (`cnu_conyuge_con_hijos`, letras 2.c y 2.d) | |
-| Sobrevivencia de cónyuge con hijos (`cnu_sobrevivencia_conyuge_con_hijos`, letras 1.b y 1.c) | |
-| Conviviente civil sin hijos o con hijos comunes (`conviviente=True` en las funciones del cónyuge; letras 1.l, 1.n, 1.p, 2.m, 2.o y 2.q, misma fórmula con `a` en lugar de `y`) | |
-| Madre o padre de hijos de filiación no matrimonial: 36% sin hijos con derecho, 30% hasta los 24 años del hijo menor y 36% después, o 30% vitalicio con algún hijo inválido, pensión de vejez o invalidez (`cnu_madre_padre`, letras 2.i, 2.j y 2.k) | |
-| Sobrevivencia de madre o padre de hijos no matrimoniales (`cnu_sobrevivencia_madre_padre`, letras 1.h, 1.i y 1.j) | |
-| Madre o padre del afiliado, 50% cada uno, pensión de vejez o invalidez (`cnu_padres`, letra 2.l) | |
-| Sobrevivencia de madre o padre del causante (`cnu_sobrevivencia_padres`, letra 1.k) | |
-| Hijo no inválido, 15% hasta los 24 años, pensión de vejez o invalidez (`cnu_hijo`, letra 2.e) | |
-| Sobrevivencia de hijo no inválido (`cnu_sobrevivencia_hijo`, letra 1.d) | |
-| Hijo inválido total (15% vitalicio) o parcial (15% hasta los 24 años y 11% después), con tabla de inválidos, pensión de vejez o invalidez (`cnu_hijo_invalido`, letra 2.f) | |
-| Sobrevivencia de hijo inválido total o parcial (`cnu_sobrevivencia_hijo_invalido`, letra 1.e) | |
+Están implementados todos los beneficiarios del Anexo N° 7 del Libro III,
+en pensión de vejez o invalidez (afiliado vivo, letras 2.x) y en
+sobrevivencia (afiliado fallecido, letras 1.x), con los porcentajes del
+artículo 58 del D.L. N° 3.500:
+
+| Beneficiario | Vejez o invalidez | Sobrevivencia |
+|---|---|---|
+| Afiliado | `cnu_afiliado` | |
+| Cónyuge sin hijos, 60% | `cnu_conyuge` (letra 2.b) | `cnu_sobrevivencia_conyuge` (letra 1.a) |
+| Cónyuge con hijos con derecho a pensión: 50% hasta los 24 años del hijo menor y 60% después, o 50% vitalicio con algún hijo inválido | `cnu_conyuge_con_hijos` (letras 2.c y 2.d) | `cnu_sobrevivencia_conyuge_con_hijos` (letras 1.b y 1.c) |
+| Conviviente civil sin hijos o con hijos comunes, misma fórmula con `a` en lugar de `y` | `conviviente=True` en las funciones del cónyuge (letras 2.m, 2.o y 2.q) | ídem (letras 1.l, 1.n y 1.p) |
+| Hijo no inválido, 15% hasta los 24 años | `cnu_hijo` (letra 2.e) | `cnu_sobrevivencia_hijo` (letra 1.d) |
+| Hijo inválido total (15% vitalicio) o parcial (15% hasta los 24 años y 11% después), con tabla de inválidos | `cnu_hijo_invalido` (letra 2.f) | `cnu_sobrevivencia_hijo_invalido` (letra 1.e) |
+| Madre o padre de hijos de filiación no matrimonial: 36% sin hijos con derecho, 30% hasta los 24 años del hijo menor y 36% después, o 30% vitalicio con algún hijo inválido | `cnu_madre_padre` (letras 2.i, 2.j y 2.k) | `cnu_sobrevivencia_madre_padre` (letras 1.h, 1.i y 1.j) |
+| Madre o padre del afiliado, 50% cada uno | `cnu_padres` (letra 2.l) | `cnu_sobrevivencia_padres` (letra 1.k) |
+| Grupo familiar completo: CNU total como suma del afiliado y de cada beneficiario de la lista, con los tramos del artículo 58 decididos desde los hijos con derecho | `cnu_grupo_familiar`, `cnu grupo` | ídem con afiliado `None` |
+| Cuota mortuoria de 15 UF (`CUOTA_MORTUORIA_UF`), componente opcional del grupo familiar en las unidades del saldo (`valor_uf`) | `cnu_grupo_familiar(valor_uf=...)` | ídem |
+| Grupo familiar vectorial: afiliado, cónyuge o conviviente y hasta `k` hijos por fila, con total y matriz de componentes; los grupos con madre o padre no matrimonial o con padres del afiliado se calculan con las vectoriales individuales | `cnu_grupo_familiar_vec` | ídem con `sobrevivencia=True` |
 
 Las funciones del hijo reciben su edad desde los 0 años; las del hijo no
 inválido devuelven 0 desde los 24 y las del hijo inválido no tienen edad
@@ -453,12 +452,40 @@ con cónyuge, conviviente, hijos o madre o padre no matrimonial, más de un
 cónyuge o conviviente, o más de una madre y un padre del afiliado lanzan
 `ErrorGrupoFamiliar` (un `ValueError` que cita el artículo), igual que un
 grupo con hijos con derecho pero sin cónyuge, conviviente ni madre o padre no
-matrimonial, cuyo porcentaje 0,15 + 0,5/n sigue pendiente. La elegibilidad
-de cada beneficiario (por ejemplo, la calidad de estudiante entre los 18 y
-los 24 años, la invalidez declarada y su grado, la existencia de la unión
-civil, la filiación de los hijos o la calidad de carga de los padres) es un
-dato de entrada que el paquete no valida: quien llama decide quién integra
-el grupo y el paquete calcula su capital necesario.
+matrimonial (ver [Fuera de alcance](#fuera-de-alcance)).
+
+### Fuera de alcance
+
+El paquete calcula capitales necesarios; lo que sigue queda deliberadamente
+fuera y es responsabilidad de quien llama:
+
+* **Elegibilidad de los beneficiarios.** La calidad de estudiante entre los
+  18 y los 24 años, la invalidez declarada y su grado, la existencia de la
+  unión civil, la filiación de los hijos y la calidad de carga familiar de
+  los padres son datos de entrada que el paquete no valida: quien llama
+  decide quién integra el grupo y el paquete calcula su capital necesario.
+* **Reparto de la pensión de sobrevivencia** entre los beneficiarios
+  (mensualidades del Capítulo III de la Letra F del Título I del Libro III):
+  es un paso posterior al CNU.
+* **Recálculos trimestrales dentro del año.** La proyección de pensión sigue
+  siendo anual; la banda del 10% se aplica entre períodos anuales
+  consecutivos (ver [Ley N° 21.735](#ley-n-21735)).
+* **Stock de la CEV.** La compensación de las pensionadas al 1 de enero de
+  2026 (letra a del Capítulo III de la Letra C del Título XIX, con la PAFE y
+  las tablas y tasa al 1 de abril de 2025) y la CEV de la pensión de
+  invalidez; el paquete cubre el flujo de nuevas pensionadas de vejez.
+* **Otros beneficios del Seguro Social Previsional** distintos de la CEV
+  (beneficio por años cotizados y demás prestaciones de la Ley N° 21.735).
+* **Datos externos.** El paquete no descarga la TITRP, el valor de la UF ni
+  la tasa implícita de rentas vitalicias; son entradas (`rp`, `valor_uf`,
+  `rv`).
+* **Dos combinaciones del Anexo N° 7 sin cónyuge ni madre o padre.** Hijos
+  con derecho a pensión sin cónyuge, conviviente ni madre o padre no
+  matrimonial (letras 1.f, 1.g, 2.g y 2.h, porcentaje 0,15 + 0,5/n por hijo)
+  y conviviente civil sin hijos comunes que concurre con hijos del causante
+  (letras 1.m, 1.o, 2.n y 2.p, 15% mientras haya hijos con derecho).
+  `cnu_grupo_familiar` rechaza el primer caso con `ErrorGrupoFamiliar`; el
+  detalle está en `HANDOFF.md`.
 
 ### Ley N° 21.735
 

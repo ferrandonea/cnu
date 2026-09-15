@@ -56,7 +56,7 @@ Funciones principales
   febrero de 2022 (:data:`DEROGACION_FAJ`; solo para calculos historicos).
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from .core import (  # noqa: E402
     AGNO_VECTOR,
