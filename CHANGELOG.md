@@ -111,6 +111,8 @@ pendientes del cierre de la 0.3.0.
   vigente 3,45% desde julio de 2026 (Circular N° 2.417); README, ejemplos y
   tests sin cambios.
 
+PRD #17
+
 ## [0.3.0] — 2026-09-14
 
 Alinea los defaults del paquete con la norma vigente (PRD #8).
