@@ -71,9 +71,12 @@ Consideraciones:
   funciones escalares por hijo.
 - El conviviente sin hijos comunes con hijos del causante sigue la mecánica
   de dos tramos del cónyuge con hijos (temporal hasta los 24 del hijo menor)
-  pero con 15% en el primer tramo y 0% después, salvo hijos inválidos
-  (15% vitalicio). Puede modelarse con la misma función de tramos
-  cambiando los porcentajes.
+  pero con 15% en el primer tramo y, según la auditoría de las letras 1.m y
+  2.n, un término diferido del 45% (60% en total) después; con hijos
+  inválidos (1.o y 2.p) queda en 15% vitalicio. Puede modelarse con la misma
+  función de tramos cambiando los porcentajes.
+
+Estos pendientes están especificados en el issue #29.
 - La regla del hijo único de 23 años necesita la edad en meses (no solo la
   edad actuarial entera), por lo que requiere fecha de nacimiento o meses
   restantes como entrada.
