@@ -1,5 +1,6 @@
 import pytest
 
+import cnu
 from cnu.cli import CODIGO_ERROR_TASA, construir_parser, main
 
 
@@ -227,3 +228,74 @@ def test_conviviente_civil(capsys):
     lineas = capsys.readouterr().out.splitlines()
     assert lineas[0].startswith("CNU RP para sobrevivencia de conviviente civil con hijo inválido 50% ")
     assert lineas[-1].strip() == "8.895316"
+
+
+def test_madre_padre(capsys):
+    assert main(["madre-padre", "50", "45", "21", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == "CNU RP para madre no matrimonial con hijos 30%/36% (tablas cb2020h b2020m), tasa 3% en el año 2026"
+    assert lineas[-1].strip() == "1.370247"
+    assert main(["madre-padre", "50", "45", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0].startswith("CNU RP para madre no matrimonial sin hijos 36% (tablas cb2020h b2020m)")
+    assert lineas[-1].strip() == "1.370831"
+    assert main(["madre-padre", "50", "45", "30", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0].startswith("CNU RP para madre no matrimonial sin hijos 36% ") and lineas[-1].strip() == "1.370831"
+    assert main(["madre-padre", "50", "45", "21.6", "--hijo-invalido", "--pasos", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    out = capsys.readouterr().out
+    assert "madre no matrimonial con hijo inválido 30% (tablas cb2020h b2020m)" in out and "hijo 21.6 -> 22" in out
+    assert "t =   1:" in out and "30% vitalicio" in out and out.strip().splitlines()[-1].strip() == "1.142359"
+    assert main(["madre-padre", "50", "45", "21", "--pasos", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    out = capsys.readouterr().out
+    assert "tramos: 30% *" in out and out.strip().splitlines()[-1].strip() == "1.370247"
+    assert main(["madre-padre", "48", "52.4", "10", "--padre", "--cot-mujer", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0].startswith("CNU RP para padre no matrimonial con hijos 30%/36% (tablas rv2020m cb2020h)")
+    assert "madre o padre 52.4 -> 52" in lineas[0]
+    assert lineas[-1].strip() == f"{cnu.cnu_madre_padre(48, 52, 10, cot_mujer=True, madre=False, rp=0.03, agno_actual=2026):9.6f}".strip()
+
+
+def test_sobrev_madre_padre(capsys):
+    assert main(["sobrev-madre-padre", "45", "21", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == "CNU RP para sobrevivencia de madre no matrimonial con hijos 30%/36% (tabla b2020m), tasa 3% en el año 2026"
+    assert lineas[-1].strip() == "8.545539"
+    assert main(["sobrev-madre-padre", "45", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0].startswith("CNU RP para sobrevivencia de madre no matrimonial sin hijos 36% ")
+    assert lineas[-1].strip() == "8.717728"
+    assert main(["sobrev-madre-padre", "44.6", "5", "--padre", "--hijo-invalido", "--fsiniestro", "20131231"]) == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[0].startswith(
+        "CNU RP para sobrevivencia de padre no matrimonial con hijo inválido 30% (tabla b2006h), vector 2013"
+    )
+    assert "madre o padre 44.6 -> 45" in out.splitlines()[0]
+    for argv in (["madre-padre", "50", "45", "10", "--agno-actual", "2026"],
+                 ["sobrev-madre-padre", "45", "--agno-actual", "2026"]):
+        assert main(argv) == CODIGO_ERROR_TASA
+        out, err = capsys.readouterr()
+        assert out == "" and "TITRP" in err
+
+
+def test_padres(capsys):
+    assert main(["padres", "65", "88", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == "CNU RP para madre del afiliado 50% (tablas cb2020h b2020m), tasa 3% en el año 2026"
+    assert lineas[-1].strip() == "0.161421"
+    assert main(["padres", "65", "88.6", "--padre", "--pasos", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[0].startswith("CNU RP para padre del afiliado 50% (tablas cb2020h cb2020h)")
+    assert "padre 88.6 -> 89" in out.splitlines()[0] and "t =   1:" in out
+    assert out.strip().splitlines()[-1].strip() == f"{cnu.cnu_padres(65, 89, madre=False, rp=0.03, agno_actual=2026):9.6f}".strip()
+    assert main(["sobrev-padres", "88", "--rp", "0.03", "--agno-actual", "2026"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0] == "CNU RP para sobrevivencia de madre del causante 50% (tabla b2020m), tasa 3% en el año 2026"
+    assert lineas[-1].strip() == "3.089039"
+    assert main(["sobrev-padres", "88", "--padre", "--fsiniestro", "20131231"]) == 0
+    lineas = capsys.readouterr().out.splitlines()
+    assert lineas[0].startswith("CNU RP para sobrevivencia de padre del causante 50% (tabla b2006h), vector 2013")
+    for argv in (["padres", "65", "88", "--agno-actual", "2026"], ["sobrev-padres", "88", "--agno-actual", "2026"]):
+        assert main(argv) == CODIGO_ERROR_TASA
+        out, err = capsys.readouterr()
+        assert out == "" and "TITRP" in err

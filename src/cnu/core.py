@@ -9,7 +9,12 @@ o parcial (:func:`cnu_hijo_invalido`, letra f del punto 2, y
 :func:`cnu_sobrevivencia_hijo_invalido`, letra e del punto 1) y del conyuge
 con hijos con derecho a pension (:func:`cnu_conyuge_con_hijos`, letras c y d
 del punto 2, y :func:`cnu_sobrevivencia_conyuge_con_hijos`, letras b y c del
-punto 1), que no tienen rutina Mata. El conviviente civil (Ley N 20.830) se
+punto 1), de la madre o el padre de hijos de filiacion no matrimonial
+(:func:`cnu_madre_padre`, letras i, j y k del punto 2, y
+:func:`cnu_sobrevivencia_madre_padre`, letras h, i y j del punto 1) y de cada
+padre del afiliado (:func:`cnu_padres`, letra l del punto 2, y
+:func:`cnu_sobrevivencia_padres`, letra k del punto 1), que no tienen rutina
+Mata. El conviviente civil (Ley N 20.830) se
 calcula con las funciones del conyuge, cuyas formulas son identicas
 (``conviviente=True``). Todas se calculan sobre el nucleo comun :func:`anualidad`, que admite
 las variantes del Anexo (limite de periodos, condicion de fallecimiento del
@@ -712,28 +717,56 @@ def _tramos_hijo_invalido_parcial(vitalicia: float, temporal: float, h: int, pas
     return _tramos_edad_limite(vitalicia, temporal, h, pasos, FRACCION_HIJO, FRACCION_HIJO_INVALIDO_PARCIAL)
 
 
-def _tramos_conyuge_con_hijos(vitalicia: float, temporal, y: int, h: int, hijo_invalido: bool, pasos: bool) -> float:
-    """Porcentaje del conyuge con hijos sobre su anualidad bruta ``vitalicia``:
-    50% vitalicio con algun hijo invalido; 60% vitalicio (como sin hijos) si
-    el hijo menor ya tiene 24; 50% vitalicio si el conyuge supera la edad
-    maxima antes de que el hijo cumpla 24 (el tramo diferido es nulo); en
-    otro caso 50%/60% por tramos, con ``temporal(periodos)`` la anualidad
-    temporal bruta de ese numero de periodos."""
+def _tramos_con_hijos(
+    vitalicia: float, temporal, y: int, h: int | None, hijo_invalido: bool, pasos: bool,
+    quien: str, fraccion_con_hijos: float, fraccion_sin_hijos: float,
+) -> float:
+    """Porcentaje de un beneficiario cuyo tramo depende de los hijos con
+    derecho (conyuge 50%/60%, madre o padre no matrimonial 30%/36%) sobre su
+    anualidad bruta ``vitalicia``: ``fraccion_con_hijos`` vitalicia con algun
+    hijo invalido; ``fraccion_sin_hijos`` vitalicia sin hijos con derecho
+    (``h`` es ``None``) o si el hijo menor ya tiene 24; ``fraccion_con_hijos``
+    vitalicia si el beneficiario supera la edad maxima antes de que el hijo
+    cumpla 24 (el tramo diferido es nulo); en otro caso dos tramos, con
+    ``temporal(periodos)`` la anualidad temporal bruta de ese numero de
+    periodos."""
     if hijo_invalido:
         if pasos:
-            print("conyuge con algun hijo invalido con derecho a pension: 50% vitalicio")
-        return _redondear(FRACCION_CONYUGE_CON_HIJOS * vitalicia)
+            print(f"{quien} con algun hijo invalido con derecho a pension: {fraccion_con_hijos:.0%} vitalicio")
+        return _redondear(fraccion_con_hijos * vitalicia)
+    if h is None:
+        if pasos:
+            print(f"{quien} sin hijos con derecho a pension: {fraccion_sin_hijos:.0%} vitalicio")
+        return _redondear(fraccion_sin_hijos * vitalicia)
     if h >= EDAD_LIMITE_HIJO:
         if pasos:
-            print(f"hijo menor de {h} agnos: sin derecho desde los {EDAD_LIMITE_HIJO}, 60% vitalicio como sin hijos")
-        return _redondear(FRACCION_CONYUGE * vitalicia)
+            print(f"hijo menor de {h} agnos: sin derecho desde los {EDAD_LIMITE_HIJO}, "
+                  f"{fraccion_sin_hijos:.0%} vitalicio como sin hijos")
+        return _redondear(fraccion_sin_hijos * vitalicia)
     if y + EDAD_LIMITE_HIJO - h > EDAD_MAXIMA:
         if pasos:
-            print(f"conyuge de {y} agnos supera los {EDAD_MAXIMA} antes de que el hijo cumpla {EDAD_LIMITE_HIJO}: "
-                  "50% vitalicio")
-        return _redondear(FRACCION_CONYUGE_CON_HIJOS * vitalicia)
+            print(f"{quien} de {y} agnos supera los {EDAD_MAXIMA} antes de que el hijo cumpla {EDAD_LIMITE_HIJO}: "
+                  f"{fraccion_con_hijos:.0%} vitalicio")
+        return _redondear(fraccion_con_hijos * vitalicia)
     return _tramos_edad_limite(vitalicia, temporal(EDAD_LIMITE_HIJO - 1 - h), h, pasos,
-                               FRACCION_CONYUGE_CON_HIJOS, FRACCION_CONYUGE)
+                               fraccion_con_hijos, fraccion_sin_hijos)
+
+
+def _tramos_conyuge_con_hijos(vitalicia: float, temporal, y: int, h: int, hijo_invalido: bool, pasos: bool) -> float:
+    """Conyuge con hijos: 50% mientras el hijo menor tenga derecho y 60% despues."""
+    return _tramos_con_hijos(vitalicia, temporal, y, h, hijo_invalido, pasos, "conyuge",
+                             FRACCION_CONYUGE_CON_HIJOS, FRACCION_CONYUGE)
+
+
+def _tramos_madre_padre(vitalicia: float, temporal, u: int, h: int | None, hijo_invalido: bool, pasos: bool) -> float:
+    """Madre o padre no matrimonial: 30% mientras haya hijos con derecho y 36% despues (o sin hijos)."""
+    return _tramos_con_hijos(vitalicia, temporal, u, h, hijo_invalido, pasos, "madre o padre",
+                             FRACCION_MADRE_PADRE_CON_HIJOS, FRACCION_MADRE_PADRE)
+
+
+def _edad_hijo_opcional(h) -> int | None:
+    """Edad del hijo menor con derecho, o ``None`` (tambien ``nan``) si no hay hijos con derecho."""
+    return None if h is None or _es_missing(h) else edad_entera(h)
 
 
 def cnu_hijo_invalido(
@@ -1058,6 +1091,281 @@ def cnu_sobrevivencia_conyuge_con_hijos(
         return _anualidad_bruta(qx, y, tasas, periodos, AJUSTE_MENSUAL, temporal=True)
 
     return _tramos_conyuge_con_hijos(vitalicia, temporal, y, h, hijo_invalido, pasos)
+
+
+def cnu_madre_padre(
+    x: int,
+    u: int,
+    h: int | None = None,
+    cot_mujer: bool = False,
+    madre: bool = True,
+    hijo_invalido: bool = False,
+    tabla: str = TABLA_AFILIADO,
+    tabla_benef: str = TABLA_BENEFICIARIO,
+    agno_vector: int | None = AGNO_VECTOR,
+    agno_actual: int | None = None,
+    rv: float | None = None,
+    rp: float | None = None,
+    fsiniestro: int = 0,
+    pasos: bool = False,
+    dir_tablas=None,
+    dir_vectores=None,
+) -> float:
+    """CNU de la madre o el padre de hijos de filiacion no matrimonial de un
+    afiliado pensionado por vejez o invalidez (letras i, j y k del punto 2 del
+    Anexo N 7). Sin rutina Mata equivalente.
+
+    Con ``u`` la edad de la madre o el padre, ``h`` la del hijo menor no
+    invalido con derecho, ``z = 24`` (:data:`EDAD_LIMITE_HIJO`), ``u' = u + z
+    - h`` y ``x' = x + z - h``, ``l`` los supervivientes de cada tabla e
+    ``i_t`` la tasa del periodo ``t``, el Anexo define, con la misma
+    estructura que el conyuge (:func:`cnu_conyuge_con_hijos`) y los
+    porcentajes del articulo 58 del D.L. N 3.500:
+
+    * letra i, sin hijos con derecho a pension (``h`` es ``None``), 36%
+      (:data:`FRACCION_MADRE_PADRE`) vitalicio::
+
+          cnu = 0,36 * sum_{t=0}^{w} l_{u+t} (1 - l_{x+t}/l_x) / (l_u (1+i_t)^t)
+
+    * letra j, con hijos no invalidos con derecho, 30%
+      (:data:`FRACCION_MADRE_PADRE_CON_HIJOS`) mientras el hijo menor tenga
+      derecho y 36% despues::
+
+          cnu = 0,30 * sum_{t=0}^{w} l_{u+t} (1 - l_{x+t}/l_x) / (l_u (1+i_t)^t)
+                + 0,06 * sum_{t=0}^{w} l_{u'+t} (1 - l_{x'+t}/l_x) / (l_u (1+i_{u'-u+t})^{u'-u+t})
+                - 0,06 * 11/24 * l_{u'} (1 - l_{x'}/l_x) / (l_u (1+i_{u'-u})^{u'-u})
+
+      es decir, ``0,30 * temporal + 0,36 * (vitalicia - temporal)`` con la
+      anualidad temporal hasta ``u'`` (ajuste temporal 11/24 de
+      :func:`cnu_hijo`). Con ``h >= 24`` coincide con la letra i; si la madre
+      o el padre supera los 110 agnos antes de ``u'`` queda el 30% vitalicio;
+
+    * letra k, con algun hijo invalido con derecho (``hijo_invalido``), 30%
+      vitalicio y ``h`` no interviene::
+
+          cnu = 0,30 * sum_{t=0}^{w} l_{u+t} (1 - l_{x+t}/l_x) / (l_u (1+i_t)^t)
+
+    Es la anualidad de la madre o el padre condicionada al fallecimiento del
+    afiliado (``1 - l^x_t``), sin ajuste 11/24 en el tramo vitalicio, como en
+    :func:`cnu_conyuge`. El resultado se suma al de :func:`cnu_afiliado` y al
+    de cada hijo para obtener el CNU total.
+
+    :param x: edad del afiliado.
+    :param u: edad de la madre o el padre de los hijos no matrimoniales.
+    :param h: edad del hijo menor con derecho a pension (desde 0 agnos), o
+        ``None`` (por defecto) si no hay hijos con derecho; con 24 o mas
+        equivale a ``None``. Se ignora con ``hijo_invalido``.
+    :param cot_mujer: ``True`` si el afiliado es mujer.
+    :param madre: ``True`` (por defecto) si la beneficiaria es la madre;
+        ``False`` si es el padre. Fija el sexo de la tabla de beneficiario.
+    :param hijo_invalido: ``True`` si algun hijo con derecho es invalido (30%
+        vitalicio, letra k).
+    :param tabla: tabla del afiliado (p.ej. ``"rv2009"``; por defecto ``"vigente"``).
+    :param tabla_benef: tabla de la madre o el padre, con rol de beneficiario
+        (p.ej. ``"b2006"``; por defecto ``"vigente"``).
+
+    La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
+    como en :func:`cnu_afiliado`.
+    """
+    x, u, h = edad_entera(x), edad_entera(u), _edad_hijo_opcional(h)
+    agno_actual = _agno(agno_actual)
+    tm_cot = tabla_mortalidad(tabla, ROL_AFILIADO, cot_mujer, fsiniestro, agno_actual, dir_tablas)
+    tm_mp = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, madre, fsiniestro, agno_actual, dir_tablas)
+    qx_cot, qx_mp = tm_cot.qx_mejorado(agno_actual, x), tm_mp.qx_mejorado(agno_actual, u)
+    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores, fsiniestro)
+    encabezado = f"tablas {_etiqueta_tabla(tm_cot)} {_etiqueta_tabla(tm_mp)}"
+    # Anualidad vitalicia de la madre o el padre condicionada al fallecimiento
+    # del afiliado en el periodo (sin ajuste 11/24), como la del conyuge.
+    vitalicia = _anualidad_bruta(qx_mp, u, tasas, EDAD_MAXIMA - u + 1, 0.0, qx_cot, x, pasos, encabezado)
+
+    def temporal(periodos: int) -> float:
+        return _anualidad_bruta(qx_mp, u, tasas, periodos, AJUSTE_MENSUAL, qx_cot, x, temporal=True)
+
+    return _tramos_madre_padre(vitalicia, temporal, u, h, hijo_invalido, pasos)
+
+
+def cnu_sobrevivencia_madre_padre(
+    u: int,
+    h: int | None = None,
+    madre: bool = True,
+    hijo_invalido: bool = False,
+    tabla_benef: str = TABLA_BENEFICIARIO,
+    agno_vector: int | None = AGNO_VECTOR,
+    agno_actual: int | None = None,
+    rv: float | None = None,
+    rp: float | None = None,
+    fsiniestro: int = 0,
+    pasos: bool = False,
+    dir_tablas=None,
+    dir_vectores=None,
+) -> float:
+    """CNU de pension de sobrevivencia para la madre o el padre de hijos de
+    filiacion no matrimonial (letras h, i y j del punto 1 del Anexo N 7). Sin
+    rutina Mata equivalente.
+
+    Con ``u`` la edad de la madre o el padre, ``h`` la del hijo menor no
+    invalido con derecho, ``z = 24`` (:data:`EDAD_LIMITE_HIJO`) y ``u' = u + z
+    - h``, el Anexo define, con la misma estructura que el conyuge
+    (:func:`cnu_sobrevivencia_conyuge_con_hijos`):
+
+    * letra h, sin hijos con derecho a pension (``h`` es ``None``), 36%
+      (:data:`FRACCION_MADRE_PADRE`) vitalicio::
+
+          cnu = 0,36 * [ sum_{t=0}^{w} l_{u+t} / (l_u (1+i_t)^t) - 11/24 ]
+
+    * letra i, con hijos no invalidos con derecho, 30%
+      (:data:`FRACCION_MADRE_PADRE_CON_HIJOS`) hasta ``u'`` y 36% despues::
+
+          cnu = 0,30 * [ sum_{t=0}^{w} l_{u+t} / (l_u (1+i_t)^t) - 11/24 ]
+                + 0,06 * [ sum_{t=0}^{w} l_{u'+t} / (l_u (1+i_{u'-u+t})^{u'-u+t})
+                           - 11/24 * l_{u'} / (l_u (1+i_{u'-u})^{u'-u}) ]
+
+      es decir, ``0,30 * temporal + 0,36 * (vitalicia - temporal)`` con la
+      anualidad temporal hasta ``u'`` (ajuste temporal de
+      :func:`cnu_sobrevivencia_hijo`). Con ``h >= 24`` coincide con la letra
+      h; si la madre o el padre supera los 110 agnos antes de ``u'`` queda el
+      30% vitalicio;
+
+    * letra j, con algun hijo invalido con derecho (``hijo_invalido``), 30%
+      vitalicio y ``h`` no interviene::
+
+          cnu = 0,30 * [ sum_{t=0}^{w} l_{u+t} / (l_u (1+i_t)^t) - 11/24 ]
+
+    :param u: edad de la madre o el padre de los hijos no matrimoniales.
+    :param h: edad del hijo menor con derecho a pension (desde 0 agnos), o
+        ``None`` (por defecto) si no hay hijos con derecho; se ignora con
+        ``hijo_invalido``.
+    :param madre: ``True`` (por defecto) si la beneficiaria es la madre;
+        ``False`` si es el padre. Fija el sexo de la tabla de beneficiario.
+    :param hijo_invalido: ``True`` si algun hijo con derecho es invalido (30%
+        vitalicio, letra j).
+    :param tabla_benef: tabla de mortalidad de la madre o el padre, con rol
+        de beneficiario (p.ej. ``"b2006"``; por defecto ``"vigente"``).
+
+    La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
+    como en :func:`cnu_afiliado`.
+    """
+    u, h = edad_entera(u), _edad_hijo_opcional(h)
+    agno_actual = _agno(agno_actual)
+    tm = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, madre, fsiniestro, agno_actual, dir_tablas)
+    qx = tm.qx_mejorado(agno_actual, u)
+    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores, fsiniestro)
+    # Anualidad vitalicia de la madre o el padre menos el ajuste por pago
+    # mensual, como la de cnu_sobrevivencia_conyuge.
+    vitalicia = _anualidad_bruta(qx, u, tasas, EDAD_MAXIMA - u, AJUSTE_MENSUAL, pasos=pasos,
+                                 encabezado=f"tabla {_etiqueta_tabla(tm)}")
+
+    def temporal(periodos: int) -> float:
+        return _anualidad_bruta(qx, u, tasas, periodos, AJUSTE_MENSUAL, temporal=True)
+
+    return _tramos_madre_padre(vitalicia, temporal, u, h, hijo_invalido, pasos)
+
+
+def cnu_padres(
+    x: int,
+    m: int,
+    cot_mujer: bool = False,
+    madre: bool = True,
+    tabla: str = TABLA_AFILIADO,
+    tabla_benef: str = TABLA_BENEFICIARIO,
+    agno_vector: int | None = AGNO_VECTOR,
+    agno_actual: int | None = None,
+    rv: float | None = None,
+    rp: float | None = None,
+    fsiniestro: int = 0,
+    pasos: bool = False,
+    dir_tablas=None,
+    dir_vectores=None,
+) -> float:
+    """CNU de la madre o el padre del afiliado pensionado por vejez o
+    invalidez (letra l del punto 2 del Anexo N 7: madre o padre del
+    causante). Sin rutina Mata equivalente.
+
+    Con ``m`` la edad del padre o la madre, ``l`` los supervivientes de cada
+    tabla e ``i_t`` la tasa del periodo ``t``, el Anexo define, con la misma
+    estructura que el conyuge (:func:`cnu_conyuge`) y el 50%
+    (:data:`FRACCION_PADRES`) del articulo 58 del D.L. N 3.500::
+
+        cnu = 0,5 * sum_{t=0}^{w} l_{m+t} (1 - l_{x+t}/l_x) / (l_m (1+i_t)^t)
+
+    Es la anualidad vitalicia del padre o la madre condicionada al
+    fallecimiento del afiliado (``1 - l^x_t``), sin ajuste 11/24. Calcula a
+    **uno** de los padres; con ambos, se llama una vez por cada uno (tabla de
+    beneficiario del sexo que corresponda) y se suman los resultados al de
+    :func:`cnu_afiliado`. Los padres solo tienen derecho a falta de conyuge,
+    conviviente civil, hijos y madre o padre de hijos no matrimoniales, y
+    siempre que sean carga familiar del afiliado; esa elegibilidad es un dato
+    de entrada que no se valida aqui.
+
+    :param x: edad del afiliado.
+    :param m: edad del padre o la madre del afiliado.
+    :param cot_mujer: ``True`` si el afiliado es mujer.
+    :param madre: ``True`` (por defecto) si se calcula a la madre; ``False``
+        si al padre. Fija el sexo de la tabla de beneficiario.
+    :param tabla: tabla del afiliado (p.ej. ``"rv2009"``; por defecto ``"vigente"``).
+    :param tabla_benef: tabla del padre o la madre, con rol de beneficiario
+        (p.ej. ``"b2006"``; por defecto ``"vigente"``).
+
+    La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
+    como en :func:`cnu_afiliado`.
+    """
+    x, m = edad_entera(x), edad_entera(m)
+    agno_actual = _agno(agno_actual)
+    tm_cot = tabla_mortalidad(tabla, ROL_AFILIADO, cot_mujer, fsiniestro, agno_actual, dir_tablas)
+    tm_padre = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, madre, fsiniestro, agno_actual, dir_tablas)
+    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores, fsiniestro)
+    # 50% de la anualidad del padre o la madre condicionada al fallecimiento
+    # del afiliado en el periodo; sin ajuste 11/24, como el conyuge.
+    return anualidad(
+        tm_padre.qx_mejorado(agno_actual, m), m, tasas, EDAD_MAXIMA - m + 1, FRACCION_PADRES, 0.0,
+        tm_cot.qx_mejorado(agno_actual, x), x,
+        pasos=pasos, encabezado=f"tablas {_etiqueta_tabla(tm_cot)} {_etiqueta_tabla(tm_padre)}",
+    )
+
+
+def cnu_sobrevivencia_padres(
+    m: int,
+    madre: bool = True,
+    tabla_benef: str = TABLA_BENEFICIARIO,
+    agno_vector: int | None = AGNO_VECTOR,
+    agno_actual: int | None = None,
+    rv: float | None = None,
+    rp: float | None = None,
+    fsiniestro: int = 0,
+    pasos: bool = False,
+    dir_tablas=None,
+    dir_vectores=None,
+) -> float:
+    """CNU de pension de sobrevivencia para la madre o el padre del causante
+    (letra k del punto 1 del Anexo N 7). Sin rutina Mata equivalente.
+
+    Con ``m`` la edad del padre o la madre y ``l`` los supervivientes de la
+    tabla de beneficiario de su sexo, el Anexo define, con la misma
+    estructura que el conyuge (:func:`cnu_sobrevivencia_conyuge`) y el 50%
+    (:data:`FRACCION_PADRES`) del articulo 58::
+
+        cnu = 0,5 * [ sum_{t=0}^{w} l_{m+t} / (l_m (1+i_t)^t) - 11/24 ]
+
+    Calcula a **uno** de los padres; con ambos, se llama una vez por cada
+    uno y se suman los resultados. Su derecho (a falta de otros
+    beneficiarios y como carga familiar del causante) es un dato de entrada.
+
+    :param m: edad del padre o la madre del causante.
+    :param madre: ``True`` (por defecto) si se calcula a la madre; ``False``
+        si al padre. Fija el sexo de la tabla de beneficiario.
+    :param tabla_benef: tabla de mortalidad del padre o la madre, con rol de
+        beneficiario (p.ej. ``"b2006"``; por defecto ``"vigente"``).
+
+    La tasa (``rv``, ``rp``, ``agno_vector``, ``fsiniestro``) se resuelve
+    como en :func:`cnu_afiliado`.
+    """
+    m = edad_entera(m)
+    agno_actual = _agno(agno_actual)
+    tm = tabla_mortalidad(tabla_benef, ROL_BENEFICIARIO, madre, fsiniestro, agno_actual, dir_tablas)
+    tasas = tasas_por_periodo(agno_vector, rv, rp, dir_vectores, fsiniestro)
+    # 50% de la anualidad vitalicia del padre o la madre menos el ajuste por pago mensual.
+    return anualidad(tm.qx_mejorado(agno_actual, m), m, tasas, EDAD_MAXIMA - m, FRACCION_PADRES, pasos=pasos,
+                     encabezado=f"tabla {_etiqueta_tabla(tm)}")
 
 
 def describir(

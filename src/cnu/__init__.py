@@ -17,11 +17,19 @@ Funciones principales
   derecho y 60% despues; 50% vitalicio con algun hijo invalido), sin comando
   Mata equivalente. El conviviente civil usa las funciones del conyuge con
   ``conviviente=True`` (misma formula).
+* :func:`cnu_madre_padre`, :func:`cnu_sobrevivencia_madre_padre`: madre o
+  padre de hijos de filiacion no matrimonial (36% sin hijos con derecho, 30%
+  mientras los haya), sin comando Mata equivalente.
+* :func:`cnu_padres`, :func:`cnu_sobrevivencia_padres`: madre o padre del
+  afiliado (50% cada uno, a falta de otros beneficiarios), sin comando Mata
+  equivalente.
 * :func:`cnu_afiliado_vec`, :func:`cnu_conyuge_vec`,
   :func:`cnu_sobrevivencia_conyuge_vec`, :func:`cnu_hijo_vec`,
   :func:`cnu_sobrevivencia_hijo_vec`, :func:`cnu_hijo_invalido_vec`,
   :func:`cnu_sobrevivencia_hijo_invalido_vec`, :func:`cnu_conyuge_con_hijos_vec`,
-  :func:`cnu_sobrevivencia_conyuge_con_hijos_vec`: versiones vectoriales
+  :func:`cnu_sobrevivencia_conyuge_con_hijos_vec`, :func:`cnu_madre_padre_vec`,
+  :func:`cnu_sobrevivencia_madre_padre_vec`, :func:`cnu_padres_vec`,
+  :func:`cnu_sobrevivencia_padres_vec`: versiones vectoriales
   (``cnu_afil``, ...).
 * :func:`proyectar_cnu`, :func:`proyectar_pension`: proyecciones (``cnu_proy_pensi``).
 * :func:`faj_afiliado`, :func:`faj_afiliado_vec`, :func:`calcular_faj`:
@@ -58,10 +66,14 @@ from .core import (  # noqa: E402
     cnu_conyuge_con_hijos,
     cnu_hijo,
     cnu_hijo_invalido,
+    cnu_madre_padre,
+    cnu_padres,
     cnu_sobrevivencia_conyuge,
     cnu_sobrevivencia_conyuge_con_hijos,
     cnu_sobrevivencia_hijo,
     cnu_sobrevivencia_hijo_invalido,
+    cnu_sobrevivencia_madre_padre,
+    cnu_sobrevivencia_padres,
     describir,
     edad_actuarial,
     edad_entera,
@@ -97,10 +109,14 @@ from .vectorial import (  # noqa: E402
     cnu_conyuge_vec,
     cnu_hijo_invalido_vec,
     cnu_hijo_vec,
+    cnu_madre_padre_vec,
+    cnu_padres_vec,
     cnu_sobrevivencia_conyuge_con_hijos_vec,
     cnu_sobrevivencia_conyuge_vec,
     cnu_sobrevivencia_hijo_invalido_vec,
     cnu_sobrevivencia_hijo_vec,
+    cnu_sobrevivencia_madre_padre_vec,
+    cnu_sobrevivencia_padres_vec,
 )
 
 
@@ -124,10 +140,12 @@ __all__ = [
     "agno_tabla_por_siniestro", "agno_vector_efectivo", "calcular_faj", "cargar_tabla_mortalidad", "cargar_vector_tasas",
     "cnu_afiliado", "cnu_afiliado_vec", "cnu_conyuge", "cnu_conyuge_con_hijos", "cnu_conyuge_con_hijos_vec",
     "cnu_conyuge_vec", "cnu_hijo", "cnu_hijo_invalido", "cnu_hijo_invalido_vec", "cnu_hijo_vec",
+    "cnu_madre_padre", "cnu_madre_padre_vec", "cnu_padres", "cnu_padres_vec",
     "cnu_sobrevivencia_conyuge", "cnu_sobrevivencia_conyuge_con_hijos", "cnu_sobrevivencia_conyuge_con_hijos_vec",
     "cnu_sobrevivencia_conyuge_vec", "cnu_sobrevivencia_hijo",
     "cnu_sobrevivencia_hijo_invalido", "cnu_sobrevivencia_hijo_invalido_vec",
-    "cnu_sobrevivencia_hijo_vec", "describir", "edad_actuarial", "edad_entera",
+    "cnu_sobrevivencia_hijo_vec", "cnu_sobrevivencia_madre_padre", "cnu_sobrevivencia_madre_padre_vec",
+    "cnu_sobrevivencia_padres", "cnu_sobrevivencia_padres_vec", "describir", "edad_actuarial", "edad_entera",
     "escribir_matriz_mata", "faj_afiliado", "faj_afiliado_vec", "faj_derogado", "faj_funcion_objetivo",
     "guardar_tabla_mortalidad", "guardar_vector_tasas", "leer_matriz_mata", "main",
     "proyectar_cnu", "proyectar_pension", "tabla_mortalidad", "tabla_por_fecha", "tablas_disponibles",

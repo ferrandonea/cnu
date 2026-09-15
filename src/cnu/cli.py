@@ -44,6 +44,10 @@ def _opcion_hijo_invalido(p: argparse.ArgumentParser) -> None:
                    help="algún hijo con derecho a pensión es inválido: 50%% vitalicio (la edad h no interviene)")
 
 
+def _opcion_padre(p: argparse.ArgumentParser, quien: str) -> None:
+    p.add_argument("--padre", action="store_true", help=f"el beneficiario es el padre {quien} (por defecto, la madre)")
+
+
 def _opciones_faj(p: argparse.ArgumentParser) -> None:
     p.add_argument("--edad-maxima", type=int, default=_faj.EDAD_MAXIMA_FAJ, help="edad hasta la que cubre el FAJ")
     p.add_argument("--saldo", type=float, default=1.0, help="saldo al momento del retiro")
@@ -138,6 +142,44 @@ def construir_parser() -> argparse.ArgumentParser:
     _opciones_comunes(p, benef=True, afil=False)
     _opciones_tasa(p)
 
+    p = sub.add_parser("madre-padre", help="CNU para madre o padre de hijos de filiación no matrimonial, 36%% sin"
+                                           " hijos con derecho a pensión y 30%% mientras los haya")
+    p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("u", type=float, help="edad de la madre o el padre (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("h", type=float, nargs="?", default=None,
+                   help="edad del hijo menor con derecho a pensión, desde 0; sin ella, sin hijos con derecho (36%%)")
+    p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
+    _opcion_padre(p, "de los hijos")
+    p.add_argument("--hijo-invalido", action="store_true",
+                   help="algún hijo con derecho a pensión es inválido: 30%% vitalicio (la edad h no interviene)")
+    _opciones_comunes(p, benef=True)
+    _opciones_tasa(p)
+
+    p = sub.add_parser("sobrev-madre-padre", help="CNU de sobrevivencia para madre o padre de hijos de filiación"
+                                                  " no matrimonial, 36%% sin hijos con derecho y 30%% mientras los haya")
+    p.add_argument("u", type=float, help="edad de la madre o el padre (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("h", type=float, nargs="?", default=None,
+                   help="edad del hijo menor con derecho a pensión, desde 0; sin ella, sin hijos con derecho (36%%)")
+    _opcion_padre(p, "de los hijos")
+    p.add_argument("--hijo-invalido", action="store_true",
+                   help="algún hijo con derecho a pensión es inválido: 30%% vitalicio (la edad h no interviene)")
+    _opciones_comunes(p, benef=True, afil=False)
+    _opciones_tasa(p)
+
+    p = sub.add_parser("padres", help="CNU para la madre o el padre del afiliado, 50%% cada uno (uno por llamada)")
+    p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
+    p.add_argument("m", type=float, help="edad de la madre o el padre del afiliado (se redondea a edad actuarial)")
+    p.add_argument("--cot-mujer", action="store_true", help="el afiliado es mujer")
+    _opcion_padre(p, "del afiliado")
+    _opciones_comunes(p, benef=True)
+    _opciones_tasa(p)
+
+    p = sub.add_parser("sobrev-padres", help="CNU de sobrevivencia para la madre o el padre del causante, 50%% cada uno")
+    p.add_argument("m", type=float, help="edad de la madre o el padre del causante (se redondea a edad actuarial)")
+    _opcion_padre(p, "del causante")
+    _opciones_comunes(p, benef=True, afil=False)
+    _opciones_tasa(p)
+
     p = sub.add_parser("faj", help="Factor de Ajuste (cnu_faji); derogado desde el 1-2-2022 (Ley 21.419)")
     p.add_argument("x", type=float, help="edad del afiliado (admite decimales; se redondea a edad actuarial)")
     p.add_argument("y", type=float, nargs="?", default=None,
@@ -200,6 +242,21 @@ def etiqueta_conyuge(conviviente: bool, con_hijos: bool = False, hijo_invalido: 
     if not con_hijos:
         return f"{quien} sin hijos"
     return f"{quien} con hijo inválido 50%" if hijo_invalido else f"{quien} con hijos 50%/60%"
+
+
+def etiqueta_madre_padre(madre: bool, h=None, hijo_invalido: bool = False) -> str:
+    """Madre o padre de hijos no matrimoniales y porcentaje aplicado para ``describir``."""
+    quien = "madre" if madre else "padre"
+    if hijo_invalido:
+        return f"{quien} no matrimonial con hijo inválido 30%"
+    if h is None or core.edad_entera(h) >= core.EDAD_LIMITE_HIJO:
+        return f"{quien} no matrimonial sin hijos 36%"
+    return f"{quien} no matrimonial con hijos 30%/36%"
+
+
+def etiqueta_padres(madre: bool, de: str = "del afiliado") -> str:
+    """Madre o padre del afiliado (o del causante) y porcentaje aplicado para ``describir``."""
+    return f"{'madre' if madre else 'padre'} {de} 50%"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -314,6 +371,39 @@ def _ejecutar(args) -> int:
               + _nota_edades(hijo=args.h))
         v = core.cnu_sobrevivencia_hijo_invalido(args.h, args.mujer, args.parcial, args.tabla_benef, rv=args.rv,
                                                  rp=args.rp, pasos=args.pasos, **comunes)
+        print(f"{v:9.6f}")
+    elif c == "madre-padre":
+        print(core.describir(etiqueta_madre_padre(not args.padre, args.h, args.hijo_invalido), args.tabla,
+                             args.tabla_benef, args.agno_vector, args.agno_actual, args.rv, args.rp,
+                             args.fsiniestro, mujer=args.cot_mujer, benef_mujer=not args.padre,
+                             dir_tablas=args.dir_tablas)
+              + _nota_edades(afiliado=args.x, **{"madre o padre": args.u}, hijo=args.h))
+        v = core.cnu_madre_padre(args.x, args.u, args.h, args.cot_mujer, not args.padre, args.hijo_invalido,
+                                 args.tabla, args.tabla_benef, rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
+        print(f"{v:9.6f}")
+    elif c == "sobrev-madre-padre":
+        print(core.describir("sobrevivencia de " + etiqueta_madre_padre(not args.padre, args.h, args.hijo_invalido),
+                             None, args.tabla_benef, args.agno_vector, args.agno_actual, args.rv, args.rp,
+                             args.fsiniestro, benef_mujer=not args.padre, dir_tablas=args.dir_tablas)
+              + _nota_edades(**{"madre o padre": args.u}, hijo=args.h))
+        v = core.cnu_sobrevivencia_madre_padre(args.u, args.h, not args.padre, args.hijo_invalido, args.tabla_benef,
+                                               rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
+        print(f"{v:9.6f}")
+    elif c == "padres":
+        print(core.describir(etiqueta_padres(not args.padre), args.tabla, args.tabla_benef, args.agno_vector,
+                             args.agno_actual, args.rv, args.rp, args.fsiniestro, mujer=args.cot_mujer,
+                             benef_mujer=not args.padre, dir_tablas=args.dir_tablas)
+              + _nota_edades(afiliado=args.x, **{"madre" if not args.padre else "padre": args.m}))
+        v = core.cnu_padres(args.x, args.m, args.cot_mujer, not args.padre, args.tabla, args.tabla_benef,
+                            rv=args.rv, rp=args.rp, pasos=args.pasos, **comunes)
+        print(f"{v:9.6f}")
+    elif c == "sobrev-padres":
+        print(core.describir("sobrevivencia de " + etiqueta_padres(not args.padre, "del causante"), None,
+                             args.tabla_benef, args.agno_vector, args.agno_actual, args.rv, args.rp,
+                             args.fsiniestro, benef_mujer=not args.padre, dir_tablas=args.dir_tablas)
+              + _nota_edades(**{"madre" if not args.padre else "padre": args.m}))
+        v = core.cnu_sobrevivencia_padres(args.m, not args.padre, args.tabla_benef, rv=args.rv, rp=args.rp,
+                                          pasos=args.pasos, **comunes)
         print(f"{v:9.6f}")
     elif c == "faj":
         rp = _nan_a_none(args.rp)

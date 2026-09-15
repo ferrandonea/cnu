@@ -68,6 +68,17 @@ cnu.cnu_sobrevivencia_conyuge_con_hijos(63, 10, mujer=True, rp=0.03, agno_actual
 # Conviviente civil: las funciones del cónyuge con conviviente=True (misma fórmula, mismo valor)
 cnu.cnu_conyuge(65, 63, conviviente=True, rp=0.03, agno_actual=2026)   # 2.493278
 
+# Madre o padre de hijos de filiación no matrimonial: 30% mientras haya hijos con derecho (aquí el menor de 21)
+# y 36% después; sin hijos con derecho (h=None), 36% vitalicio; con algún hijo inválido, 30% vitalicio
+cnu.cnu_madre_padre(50, 45, 21, rp=0.03, agno_actual=2026)              # 1.370247  (cb2020h, b2020m)
+cnu.cnu_madre_padre(50, 45, rp=0.03, agno_actual=2026)                  # 1.370831  (sin hijos con derecho)
+cnu.cnu_sobrevivencia_madre_padre(45, 21, hijo_invalido=True, rp=0.03, agno_actual=2026)  # 7.264773  (b2020m)
+
+# Padres del afiliado: 50% cada uno, una llamada por cada padre (madre=True usa la tabla de mujer)
+cnu.cnu_padres(65, 88, rp=0.03, agno_actual=2026)                       # 0.161421  (cb2020h, b2020m)
+cnu.cnu_padres(65, 88, madre=False, rp=0.03, agno_actual=2026)          # 0.115149  (cb2020h, cb2020h)
+cnu.cnu_sobrevivencia_padres(88, rp=0.03, agno_actual=2026)             # 3.089039  (b2020m)
+
 # Factor de ajuste (derogado desde el 1-2-2022: con fecha posterior emite AdvertenciaCNU)
 cnu.faj_afiliado(65, rp=0.03, agno_vector=2013, agno_actual=2026)      # 0.037205
 cnu.faj_afiliado(65, 62, rp=0.03, agno_vector=2013, agno_actual=2026)  # 0.004659
@@ -131,8 +142,10 @@ Una tabla explícita se respeta aunque no sea la vigente:
 Las funciones con sufijo `_vec` equivalen a los comandos de Stata que operan
 sobre variables (`cnu_afil`, `cnu_cnyg_s_h`, `cnu_sobr_cnyg_s_h`, `cnu_faj`);
 `cnu_hijo_vec`, `cnu_sobrevivencia_hijo_vec`, `cnu_hijo_invalido_vec`,
-`cnu_sobrevivencia_hijo_invalido_vec`, `cnu_conyuge_con_hijos_vec` y
-`cnu_sobrevivencia_conyuge_con_hijos_vec` no tienen comando equivalente.
+`cnu_sobrevivencia_hijo_invalido_vec`, `cnu_conyuge_con_hijos_vec`,
+`cnu_sobrevivencia_conyuge_con_hijos_vec`, `cnu_madre_padre_vec`,
+`cnu_sobrevivencia_madre_padre_vec`, `cnu_padres_vec` y
+`cnu_sobrevivencia_padres_vec` no tienen comando equivalente.
 Cada argumento puede ser un escalar o un arreglo con un valor por fila. La
 tabla `"vigente"` se resuelve fila a fila con el sexo, el `agno_actual` y el
 `fsiniestro` de cada observación.
@@ -146,6 +159,8 @@ cnu.cnu_conyuge_vec(edades, [53, 63, 73], cony_mujer=True, rp=[0.03, np.nan, 0.0
 cnu.cnu_hijo_vec(edades, [3, 12, 25], hijo_mujer=[0, 1, 0], rp=0.03)                # fila 2: 0 (24 años o más)
 cnu.cnu_hijo_invalido_vec(edades, [3, 12, 25], parcial=[0, 1, 1], rp=0.03)          # tabla mi, sin edad límite
 cnu.cnu_conyuge_con_hijos_vec(edades, [53, 63, 73], [3, 12, 25], cony_mujer=True, rp=0.03)  # fila 2: como sin hijos
+cnu.cnu_madre_padre_vec(edades, [50, 60, 70], [3, 12, np.nan], rp=0.03)              # fila 2 (nan): sin hijos, 36%
+cnu.cnu_padres_vec(edades, [80, 88, 95], madre=[1, 0, 1], rp=0.03)                   # un padre o madre por fila
 cnu.faj_afiliado_vec(edades, rp=0.03)
 ```
 
@@ -166,6 +181,9 @@ vector de tasas inexistente quedan en `nan` y se emite una advertencia
 | `parcial` | Grado de invalidez del hijo inválido: `False` (por defecto) total, 15% vitalicio; `True` parcial, 15% hasta los 24 años y 11% después. |
 | `h` (cónyuge con hijos) | Edad del hijo menor con derecho a pensión: fija el tramo al 50% (hasta que cumpla 24 años) y el tramo al 60% desde entonces. |
 | `hijo_invalido` | `True` si algún hijo con derecho a pensión del cónyuge es inválido: 50% vitalicio (la edad `h` no interviene). |
+| `u`, `h` (madre o padre no matrimonial) | Edad de la madre o el padre de hijos de filiación no matrimonial y del hijo menor con derecho: 30% hasta que cumpla 24 años y 36% desde entonces; `h=None` (o `nan` en la vectorial) es sin hijos con derecho, 36% vitalicio; `hijo_invalido`, 30% vitalicio. |
+| `m` (padres) | Edad del padre o la madre del afiliado; 50% vitalicio cada uno, una llamada (o una fila) por cada padre. |
+| `madre` | En las funciones de madre o padre y de padres: `True` (por defecto) si el beneficiario es la madre, `False` si es el padre; fija el sexo de la tabla de beneficiario. |
 | `conviviente` | `True` si el beneficiario de las funciones del cónyuge es conviviente civil (Ley N° 20.830): misma fórmula y mismo valor; documenta el rol. |
 | `agno_vector` | Año del vector de tasas para Retiro Programado. Sin él, solo un `fsiniestro` anterior a 2014 usa por defecto el vector de su año. |
 | `agno_actual` | Año de cálculo; ajusta las tablas por mejoramiento y, sin `fsiniestro`, fija la tabla vigente al 31 de diciembre de ese año (por defecto, el año actual). |
@@ -201,6 +219,11 @@ cnu conyuge-ch 65 63 10 --rp 0.03 --agno-actual 2026  # cónyuge con hijos 50%/6
 cnu conyuge-ch 65 63 10 --hijo-invalido --rp 0.03     # cónyuge con hijo inválido 50%
 cnu sobrev-conyuge-ch 63 10 --mujer --rp 0.03         # sobrevivencia de cónyuge con hijos 50%/60%
 cnu conyuge 65 63 --conviviente --rp 0.03             # conviviente civil (mismo valor que el cónyuge)
+cnu madre-padre 50 45 21 --rp 0.03 --agno-actual 2026 # madre de hijos no matrimoniales con hijos 30%/36%
+cnu madre-padre 50 45 --padre --rp 0.03               # padre de hijos no matrimoniales sin hijos con derecho 36%
+cnu sobrev-madre-padre 45 21 --hijo-invalido --rp 0.03   # sobrevivencia de madre no matrimonial con hijo inválido 30%
+cnu padres 65 88 --rp 0.03 --agno-actual 2026         # madre del afiliado 50% (--padre: el padre, tabla de hombre)
+cnu sobrev-padres 88 --rp 0.03                        # sobrevivencia de madre del causante 50%
 cnu faj 65 62 --rp 0.03 --agno-vector 2013
 cnu proy 65 --faj --csv --rp 0.03 > trayectoria.csv
 cnu tablas
@@ -219,6 +242,12 @@ CNU RP para hijo inválido total 15% (tablas cb2020h mi2020h), tasa 3% en el añ
 $ cnu conyuge-ch 65 63 10 --rp 0.03 --agno-actual 2026
 CNU RP para cónyuge con hijos 50%/60% (tablas cb2020h b2020m), tasa 3% en el año 2026
  2.409035
+$ cnu madre-padre 50 45 21 --rp 0.03 --agno-actual 2026
+CNU RP para madre no matrimonial con hijos 30%/36% (tablas cb2020h b2020m), tasa 3% en el año 2026
+ 1.370247
+$ cnu padres 65 88 --rp 0.03 --agno-actual 2026
+CNU RP para madre del afiliado 50% (tablas cb2020h b2020m), tasa 3% en el año 2026
+ 0.161421
 ```
 
 ## Estado normativo
@@ -275,10 +304,14 @@ históricos: con fecha de cálculo igual o posterior a `cnu.DEROGACION_FAJ`
 |---|---|
 | Afiliado (`cnu_afiliado`) | Hijos sin cónyuge ni madre o padre con derecho a pensión (letras 1.f, 1.g, 2.g y 2.h, porcentaje con 0,5/n) |
 | Cónyuge sin hijos, pensión de vejez (`cnu_conyuge`, letra 2.b del Anexo N° 7) | Conviviente civil sin hijos comunes que concurre con hijos del causante (letras 1.m, 1.o, 2.n y 2.p, 15% mientras haya hijos con derecho) |
-| Sobrevivencia de cónyuge sin hijos (`cnu_sobrevivencia_conyuge`, letra 1.a) | Madre o padre de hijos de filiación no matrimonial |
-| Cónyuge con hijos con derecho a pensión: 50% hasta los 24 años del hijo menor y 60% después, o 50% vitalicio con algún hijo inválido, pensión de vejez o invalidez (`cnu_conyuge_con_hijos`, letras 2.c y 2.d) | Padres del afiliado |
-| Sobrevivencia de cónyuge con hijos (`cnu_sobrevivencia_conyuge_con_hijos`, letras 1.b y 1.c) | Cuota mortuoria |
+| Sobrevivencia de cónyuge sin hijos (`cnu_sobrevivencia_conyuge`, letra 1.a) | Cuota mortuoria |
+| Cónyuge con hijos con derecho a pensión: 50% hasta los 24 años del hijo menor y 60% después, o 50% vitalicio con algún hijo inválido, pensión de vejez o invalidez (`cnu_conyuge_con_hijos`, letras 2.c y 2.d) | |
+| Sobrevivencia de cónyuge con hijos (`cnu_sobrevivencia_conyuge_con_hijos`, letras 1.b y 1.c) | |
 | Conviviente civil sin hijos o con hijos comunes (`conviviente=True` en las funciones del cónyuge; letras 1.l, 1.n, 1.p, 2.m, 2.o y 2.q, misma fórmula con `a` en lugar de `y`) | |
+| Madre o padre de hijos de filiación no matrimonial: 36% sin hijos con derecho, 30% hasta los 24 años del hijo menor y 36% después, o 30% vitalicio con algún hijo inválido, pensión de vejez o invalidez (`cnu_madre_padre`, letras 2.i, 2.j y 2.k) | |
+| Sobrevivencia de madre o padre de hijos no matrimoniales (`cnu_sobrevivencia_madre_padre`, letras 1.h, 1.i y 1.j) | |
+| Madre o padre del afiliado, 50% cada uno, pensión de vejez o invalidez (`cnu_padres`, letra 2.l) | |
+| Sobrevivencia de madre o padre del causante (`cnu_sobrevivencia_padres`, letra 1.k) | |
 | Hijo no inválido, 15% hasta los 24 años, pensión de vejez o invalidez (`cnu_hijo`, letra 2.e) | |
 | Sobrevivencia de hijo no inválido (`cnu_sobrevivencia_hijo`, letra 1.d) | |
 | Hijo inválido total (15% vitalicio) o parcial (15% hasta los 24 años y 11% después), con tabla de inválidos, pensión de vejez o invalidez (`cnu_hijo_invalido`, letra 2.f) | |
@@ -288,10 +321,15 @@ Las funciones del hijo reciben su edad desde los 0 años; las del hijo no
 inválido devuelven 0 desde los 24 y las del hijo inválido no tienen edad
 límite. Las del cónyuge con hijos reciben la edad del hijo menor con derecho
 (`h`) y un indicador de hijo inválido; con `h` de 24 o más devuelven
-exactamente el valor del cónyuge sin hijos. La elegibilidad (por ejemplo, la
+exactamente el valor del cónyuge sin hijos. Las de la madre o el padre de
+hijos no matrimoniales siguen la misma mecánica con 30%/36% y admiten
+`h=None` (sin hijos con derecho, 36%). Las de los padres del afiliado calculan
+a uno de los dos por llamada (50% cada uno); su derecho existe solo a falta de
+cónyuge, conviviente civil, hijos y madre o padre no matrimonial, y siempre
+que sean carga familiar del afiliado. La elegibilidad (por ejemplo, la
 calidad de estudiante entre los 18 y los 24 años, la invalidez declarada y su
-grado, o la existencia de la unión civil) es un dato de entrada que el
-paquete no valida.
+grado, la existencia de la unión civil o la calidad de carga de los padres)
+es un dato de entrada que el paquete no valida.
 
 ### Ley N° 21.735
 

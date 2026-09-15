@@ -182,3 +182,62 @@ def test_conyuge_con_hijos_vec_filas_invalidas():
     with pytest.warns(cnu.AdvertenciaCNU, match="edad negativa"):
         v = cnu.cnu_sobrevivencia_conyuge_con_hijos_vec([63, 63, 63, 19], [-1, 0, np.nan, 10], rp=0.03, agno_actual=2026)
     assert np.isnan(v[0]) and v[1] > 0 and np.isnan(v[2]) and np.isnan(v[3])
+
+
+def test_madre_padre_vec_coincide_con_escalar():
+    x, u, h = [50, 48, 50, 50, 50], [45, 52, 45, 45, 45], [21, 10, 30, 5, np.nan]
+    cot, madre, inv = [False, True, False, False, False], [True, False, True, True, True], [False, False, False, True, False]
+    v = cnu.cnu_madre_padre_vec(x, u, h, cot_mujer=cot, madre=madre, hijo_invalido=inv, rp=0.03, agno_actual=2026)
+    e = [cnu.cnu_madre_padre(a, b, c, d, f, g, rp=0.03, agno_actual=2026) for a, b, c, d, f, g in zip(x, u, h, cot, madre, inv)]
+    np.testing.assert_allclose(v, e)
+    assert v[2] == v[4] == cnu.cnu_madre_padre(50, 45, rp=0.03, agno_actual=2026)  # hijo de 30 o nan: sin hijos
+    assert (cnu.cnu_madre_padre_vec([50, 50], [45, 45], rp=0.03, agno_actual=2026) == v[4]).all()  # h=None
+    v = cnu.cnu_sobrevivencia_madre_padre_vec(u, h, madre=madre, hijo_invalido=inv, rp=[0.03, np.nan, 0.03, 0.03, 0.03],
+                                              fsiniestro=[0, 20130101, 0, 0, 0], agno_actual=2026)
+    e = [cnu.cnu_sobrevivencia_madre_padre(45, 21, rp=0.03, agno_actual=2026),
+         cnu.cnu_sobrevivencia_madre_padre(52, 10, madre=False, fsiniestro=20130101, agno_actual=2026),
+         cnu.cnu_sobrevivencia_madre_padre(45, rp=0.03, agno_actual=2026),
+         cnu.cnu_sobrevivencia_madre_padre(45, 5, hijo_invalido=True, rp=0.03, agno_actual=2026),
+         cnu.cnu_sobrevivencia_madre_padre(45, rp=0.03, agno_actual=2026)]
+    np.testing.assert_allclose(v, e)
+
+
+def test_madre_padre_vec_filas_invalidas():
+    with pytest.warns(cnu.AdvertenciaCNU, match="hijos tienen edad negativa") as w:
+        v = cnu.cnu_madre_padre_vec([50, 19, 50, 50, 50, 50], [45, 45, 19, 111, 45, 45], [-1, 10, 10, 10, 10, 10],
+                                    rp=[0.03, 0.03, 0.03, 0.03, np.nan, 0.03], agno_actual=2026,
+                                    incluir=[True, True, True, True, True, False])
+    msg = str(w[0].message)
+    assert "cotizantes tienen menos de 20" in msg and "madres o padres tienen menos de 20" in msg
+    assert "madres o padres tienen más de 110" in msg and "sin tasa" in msg
+    assert np.isnan(v).all()
+    with pytest.warns(cnu.AdvertenciaCNU, match="edad negativa"):
+        v = cnu.cnu_sobrevivencia_madre_padre_vec([45, 45, np.nan, 19], [-1, 0, 10, 10], rp=0.03, agno_actual=2026)
+    assert np.isnan(v[0]) and v[1] > 0 and np.isnan(v[2]) and np.isnan(v[3])
+
+
+def test_padres_vec_coincide_con_escalar():
+    x, m, madre, cot = [65, 60, 65, 65], [88, 85, 88, 70], [True, False, False, True], [False, True, False, False]
+    v = cnu.cnu_padres_vec(x, m, cot_mujer=cot, madre=madre, rp=0.03, agno_actual=2026)
+    e = [cnu.cnu_padres(a, b, c, d, rp=0.03, agno_actual=2026) for a, b, c, d in zip(x, m, cot, madre)]
+    np.testing.assert_allclose(v, e)
+    assert v[0] > v[2] > 0  # madre (b2020m) vale mas que padre (cb2020h) a igual edad
+    v = cnu.cnu_sobrevivencia_padres_vec(m, madre=madre, rp=[0.03, np.nan, 0.03, 0.03],
+                                         fsiniestro=[0, 20130101, 0, 0], agno_actual=2026)
+    e = [cnu.cnu_sobrevivencia_padres(88, rp=0.03, agno_actual=2026),
+         cnu.cnu_sobrevivencia_padres(85, madre=False, fsiniestro=20130101, agno_actual=2026),
+         cnu.cnu_sobrevivencia_padres(88, madre=False, rp=0.03, agno_actual=2026),
+         cnu.cnu_sobrevivencia_padres(70, rp=0.03, agno_actual=2026)]
+    np.testing.assert_allclose(v, e)
+
+
+def test_padres_vec_filas_invalidas():
+    with pytest.warns(cnu.AdvertenciaCNU, match="padres del afiliado tienen menos de 20") as w:
+        v = cnu.cnu_padres_vec([65, 19, 65, 65, 65], [19, 88, 111, 88, 88], rp=[0.03, 0.03, 0.03, np.nan, 0.03],
+                               agno_actual=2026, incluir=[True, True, True, True, False])
+    msg = str(w[0].message)
+    assert "cotizantes tienen menos de 20" in msg and "padres del afiliado tienen más de 110" in msg and "sin tasa" in msg
+    assert np.isnan(v).all()
+    with pytest.warns(cnu.AdvertenciaCNU, match="padres del causante tienen más de 110"):
+        v = cnu.cnu_sobrevivencia_padres_vec([111, 88, np.nan], rp=0.03, agno_actual=2026)
+    assert np.isnan(v[0]) and v[1] > 0 and np.isnan(v[2])
